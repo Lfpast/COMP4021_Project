@@ -24,8 +24,8 @@ if (!fs.existsSync('db/users.json') || fs.readFileSync('db/users.json', 'utf-8')
     fs.writeFileSync('db/users.json', '{}');
 }
 
-if (!fs.existsSync('db/lobby.json') || fs.readFileSync('db/lobby.json', 'utf-8').trim() === '') {
-    fs.writeFileSync('db/lobby.json', '{}');
+if (!fs.existsSync('db/lobbies.json') || fs.readFileSync('db/lobbies.json', 'utf-8').trim() === '') {
+    fs.writeFileSync('db/lobbies.json', '{}');
 }
 
 const gameSession = session({
@@ -51,7 +51,7 @@ function containWordCharsOnly(text) {
 // --- 用户认证 (Auth) ---
 
 // 注册
-app.post('/user/register', (req, res) => {
+app.post('/user', (req, res) => {
     try {
         const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
         const { username, password, name } = req.body;
@@ -149,7 +149,7 @@ app.get('/user/validate', (req, res) => {
 });
 
 // 更新用户信息
-app.put('/user/update/username/:username', (req, res) => {
+app.put('/user/update/name/:username', (req, res) => {
     try {
         const username = req.params.username;
         const { name } = req.body;
@@ -211,32 +211,80 @@ app.delete('/user/delete/:username', (req, res) => {
 // --- 游戏大厅 (Lobby) ---
 
 // 获取房间列表
-app.get('/api/v1/lobbies', (req, res) => {
-    res.json(lobbies);
+app.get('/lobby', (req, res) => {
+    try {
+        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
+        res.status(200).json(lobbies);
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
 
 // 创建房间
-app.post('/api/v1/lobbies', (req, res) => {
-    const { name, settings, host } = req.body;
-    const newLobby = {
-        id: 'lobby_' + Date.now(),
-        name: name || "New Game",
-        host: host || "Anonymous",
-        players: [], 
-        settings: settings || { difficulty: "Classic" },
-        status: 'waiting'
-    };
-    lobbies.push(newLobby);
-    console.log(`Lobby created: ${newLobby.name} (${newLobby.id})`);
-    res.status(201).json(newLobby);
+app.post('/lobby', (req, res) => {
+    try {
+        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
+        const { name, settings, owner } = req.body;
+        if (!name || !settings) {
+            return res.status(400).json({ error: 'Name and Settings cannot be Empty'} );
+        }
+    
+        const id = name + Date.now();
+        const newLobby = {
+            name: name, 
+            owner: owner,
+            players: [], 
+            settings: settings,
+            status: 'waiting'
+        };
+    
+        lobbies[id] = newLobby;
+        fs.writeFileSync('db/lobbies.json', JSON.stringify(lobbies, null, 2), 'utf-8');
+        res.status(201).json({ message: 'Create a Lobby Successfully' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
 
 // 获取特定房间信息
-app.get('/api/v1/lobbies/:id', (req, res) => {
-    const lobby = lobbies.find(l => l.id === req.params.id);
-    if (!lobby) return res.status(404).json({ error: "Lobby not found" });
-    res.json(lobby);
+app.get('/lobby/:lobbyId', (req, res) => {
+    try {
+        const Id = req.params.lobbyId;
+        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
+        if (Id in lobbies) {
+            return res.status(200).json(lobbies[Id]);
+        }
+
+        res.status(404).json({ error: 'Lobby Not Found' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
+
+// 删除特定房间
+app.delete('/lobby/:lobbyId', (req, res) => {
+    try {
+        const Id = req.params.lobbyId;
+        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
+        if (Id in lobbies) {
+            delete lobbies[Id];
+            fs.writeFileSync('db/lobbies.json', JSON.stringify(lobbies, null, 2), 'utf-8');
+            res.status(200).json({ message: 'Lobby Deleted Successfully' });
+        }
+
+        res.status(404).json({ error: 'Lobby Not Found' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+})
 
 // ==========================================
 // 4. Socket.io 实时通信

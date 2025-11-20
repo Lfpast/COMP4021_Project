@@ -33,7 +33,7 @@ package.json
 
 # Lowdb database folder
 db
-
+test_auth.py
 
 
 
