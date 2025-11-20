@@ -1,24 +1,113 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>The Multisweeper</title>
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multisweeper</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <h2>The Connection Event</h2>
-    <p>Connecting...</p>
-    <script src="/socket.io/socket.io.min.js"></script>
-    <script>
-    $(function() {
-        // Create and connect the WebSocket
-        const socket = io();
-        socket.on('connect', () => {
-            $("p").css('display', 'none');
-            socket.on('welcome', (message) => {
-                $('body').append('<p>' + message + '</p>');
-            });
-        });
-    });
-    </script>
+  <!-- Login / Registration Module -->
+  <div id="loginModal" class="modal">
+    <div class="modal-content">
+      <h1>Multisweeper</h1>
+      <p>Multisweeper Game</p>
+      <input type="text" id="username" placeholder="Username" autocomplete="off">
+      <input type="password" id="password" placeholder="Password">
+      <div class="btn-group">
+        <button id="registerBtn">Register</button>
+        <button id="loginBtn">Login</button>
+      </div>
+      <p id="loginMsg"></p>
+    </div>
+  </div>
+
+  <!-- Main Screen -->
+  <div id="mainPage" style="display:none">
+    <div class="header">
+      <h1>Multisweeper</h1>
+      <button id="logoutBtn">Logout</button>
+    </div>
+
+    <div class="container">
+      <!-- Left Panel -->
+      <div class="left-panel">
+        <h2>Welcome, <span id="welcomeUser"></span>!</h2>
+
+        <!-- 第一优先：加入房间 -->
+        <h3 style="margin:20px 0 10px;">Join a Room</h3>
+        <div class="join-box" style="margin-bottom:25px;">
+          <input type="text" id="roomInput" placeholder="Enter Room ID" style="flex:1;">
+          <button id="joinLobbyBtn">Join Room</button>
+        </div>
+
+        <!-- 第二优先：创建房间 -->
+        <h3 style="margin:20px 0 10px;">Or Create New Room</h3>
+        <input type="text" id="roomNameInput" placeholder="Room Name (optional)" style="width:100%; padding:12px; margin-bottom:12px; border-radius:8px; border:1px solid var(--border); box-sizing:border-box;">
+        <button id="createLobbyBtn" class="big-btn">Create Room</button>
+
+        <!-- Host Controls -->
+        <div id="hostControls" style="display:none; margin-top:25px;">
+          <h3>Game Mode</h3>
+          <select id="modeSelect">
+            <option value="classic">Classic (8*8, 10 mines)</option>
+            <option value="simple">Simple (9*9, 10 mines)</option>
+            <option value="medium">Medium (16*16, 40 mines)</option>
+            <option value="expert">Expert (30*16, 99 mines)</option>
+          </select>
+          <button id="startGameBtn" class="big-btn" style="margin-top:12px;">Start Game</button>
+        </div>
+
+        <!-- Room Info -->
+        <div id="roomInfo" style="display:none; margin-top:25px; padding:18px; background:rgba(0,0,0,0.06); border-radius:12px;">
+          <div style="margin-bottom:12px;">
+            <div style="margin-bottom:8px;"><strong>Room Name:</strong> <span id="currentRoomName" style="color:var(--accent); font-weight:bold; font-size:18px;"></span></div>
+            <div><strong>Room ID:</strong> 
+              <span id="currentRoomId" style="font-family:monospace; background:#0001; padding:4px 8px; border-radius:6px; font-size:15px;"></span>
+              <button id="copyRoomBtn" style="margin-left:10px; padding:4px 10px; font-size:13px;">Copy ID</button>
+            </div>
+          </div>
+          <p style="margin:15px 0 8px 0; font-weight:600;">Players in Room:</p>
+          <ul id="playersList" style="margin:0; padding-left:20px;"></ul>
+        </div>
+      </div>
+
+      <!-- Right Panel -->
+      <div class="right-panel">
+        <h3>Personal Statistics</h3>
+        <div id="statsDashboard">Loading...</div>
+
+        <h3 style="margin-top: 32px;">Settings</h3>
+        <div class="setting-item">
+          <span class="setting-text">Theme</span>
+          <select id="themeSelect" class="theme-select">
+            <option value="classic">Classic White</option>
+            <option value="desert">Desert</option>
+            <option value="garden">Garden</option>
+          </select>
+        </div>
+
+        <h3 style="margin-top: 32px;">Gameplay Settings</h3>
+        <div class="gameplay-settings">
+          <label class="setting-item">
+            <input type="checkbox" id="autoReveal">
+            <span class="setting-text">Auto Reveal on Single Click</span>
+          </label>
+          <label class="setting-item">
+            <input type="checkbox" id="showTimer">
+            <span class="setting-text">Show Timer</span>
+          </label>
+          <div class="setting-item volume-control">
+            <span class="setting-text">Volume</span>
+            <input type="range" id="volumeSlider" min="0" max="100" value="70">
+            <span id="volumeValue" class="volume-value">70%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="front.js"></script>
 </body>
 </html>

@@ -1,312 +1,200 @@
 const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
-const fs = require('fs');
-const bcrypt = require("bcrypt");
-const { Hash, hash } = require("crypto");
-const session = require("express-session");
+const bcrypt = require('bcryptjs');
+const fs = require('fs').promises;
 
 const app = express();
 const server = createServer(app);
 const io = new Server(server);
 
-// ==========================================
-// 1. 全局变量与工具函数
-// ==========================================
-// 初始化数据库文件
-if (!fs.existsSync('db')) {
-    fs.mkdirSync('db');
+app.use(express.static('public'));
+app.use(express.json());
+
+// 游戏模式
+const MODES = {
+  simple: { w: 9, h: 9, m: 10 },
+  classic: { w: 8, h: 8, m: 10 },
+  medium: { w: 16, h: 16, m: 40 },
+  expert: { w: 30, h: 16, m: 99 }
+};
+
+// LowDB 初始化
+let db;
+async function initDB() {
+  const { JSONFilePreset } = await import('lowdb/node');
+  try {
+    await fs.access('db/db.json');
+  } catch {
+    await fs.mkdir('db', { recursive: true });
+    await fs.writeFile('db/db.json', JSON.stringify({ users: [], rankings: {} }, null, 2));
+  }
+  db = await JSONFilePreset('db/db.json', { users: [], rankings: {} });
 }
+initDB();
 
-// 如果文件不存在，或者文件为空，写入空对象 {}
-if (!fs.existsSync('db/users.json') || fs.readFileSync('db/users.json', 'utf-8').trim() === '') {
-    fs.writeFileSync('db/users.json', '{}');
-}
+// ==================== REST API ====================
 
-if (!fs.existsSync('db/lobbies.json') || fs.readFileSync('db/lobbies.json', 'utf-8').trim() === '') {
-    fs.writeFileSync('db/lobbies.json', '{}');
-}
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.json({ success: false, msg: 'Missing fields' });
 
-const gameSession = session({
-    secret: "game",
-    resave: false,
-    saveUninitialized: false,
-    rolling: true,
-    cookie: { maxAge: 300000 }
+  const existing = db.data.users.find(u => u.username === username);
+  if (existing) return res.json({ success: false, msg: 'User exists' });
+
+  const hash = await bcrypt.hash(password, 10);
+  db.data.users.push({
+    username,
+    password: hash,
+    stats: Object.fromEntries(Object.keys(MODES).map(mode => [mode, { games: 0, wins: 0, bestTime: Infinity }]))
+  });
+  await db.write();
+  res.json({ success: true });
 });
 
-app.use(gameSession);
-app.use(express.json()); // 允许解析 JSON 请求体
-app.use(express.static('public')); // 托管静态文件
-
-function containWordCharsOnly(text) {
-    return /^\w+$/.test(text);
-}
-
-// ==========================================
-// 2. API Endpoints
-// ==========================================
-
-// --- 用户认证 (Auth) ---
-
-// 注册
-app.post('/user', (req, res) => {
-    try {
-        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
-        const { username, password, name } = req.body;
-        
-        // 400 Bad Request: 参数缺失
-        if (!username || !password || !name) {
-            return res.status(400).json({ error: "Username, password, and name are required" });
-        }
-
-        // 400 Bad Request: 格式错误
-        if (!containWordCharsOnly(username)) {
-            return res.status(400).json({ error: "Username contains invalid characters" });
-        }
-
-        // 409 Conflict: 用户已存在
-        if (username in users) {
-            return res.status(409).json({ error: "User already exists" });
-        }
-        
-        // 创建新用户
-        const hashedPassword = bcrypt.hashSync(password, 10);
-        users[username] = { password: hashedPassword, name: name };
-        fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
-        
-        // 201 Created: 创建成功
-        res.status(201).json({ message: "User created" });
-    } 
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = db.data.users.find(u => u.username === username);
+  if (!user || !await bcrypt.compare(password, user.password)) {
+    return res.json({ success: false, msg: 'Invalid credentials' });
+  }
+  res.json({ success: true, username });
 });
 
-// 登录
-app.post('/user/login', (req, res) => {
-    try {
-        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
-        const { username, password } = req.body;
-
-        if (username in users) {
-            const hashedPassword = users[username].password;
-            if (bcrypt.compareSync(password, hashedPassword)) {
-                const name = users[username].name;
-                req.session.user = { username, name };
-                return res.status(200).json({ message: 'User Login Successful' });
-            }
-            else {
-                return res.status(401).json({ error: 'Wrong Password' });
-            }
-        }
-
-        return res.status(404).json({ error: 'User Not Found!' });
-    } 
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
+app.get('/stats/:username', async (req, res) => {
+  await initDB();
+  const user = db.data.users.find(u => u.username === req.params.username);
+  res.json(user?.stats || {});
 });
 
-// 登出
-app.post('/user/logout', (req, res) => {
-    try {
-        if (!req.session.user) {
-            return res.status(401).json({ error: 'User is Not Logged In' });
-        }
-    
-        req.session.destroy((err) => {
-            if (err) {
-                return res.status(500).json({ error: 'Logout Failed' });
-            }
-            res.clearCookie('connect.sid'); // 清除客户端 Cookie
-            res.status(200).json({ message: 'User Logged Out Successfully' });
-        });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
+app.get('/rankings/:mode', async (req, res) => {
+  await initDB();
+  res.json(db.data.rankings[req.params.mode] || []);
 });
 
-// 验证
-app.get('/user/validate', (req, res) => {
-    try {
-        if (req.session.user) {
-            res.status(200).json({ user: req.session.user });
-        }
-        else {
-            res.status(401).json({ error: "User Has Not Signed In" });
-        }   
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
+// ==================== Socket.IO ====================
 
-// 更新用户信息
-app.put('/user/update/name/:username', (req, res) => {
-    try {
-        const username = req.params.username;
-        const { name } = req.body;
-        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
+const rooms = new Map();
 
-        users[username].name = name;
-        if (req.session.user && req.session.user.username === username) {
-             req.session.user.name = name;
-        }
-        fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
+io.on('connection', (socket) => {
+  let username = null;
 
-        res.status(200).json({ message: 'Name Changes Successfully' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
+  socket.on('auth', (user) => { username = user; });
 
-app.put('/user/update/password/:username', (req, res) => {
-    try {
-        const username = req.params.username;
-        const { password } = req.body;
-        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
+  socket.on('createLobby', (requestedRoomName) => {
+    if (!username) return;
 
-        const hashedPassword = bcrypt.hashSync(password, 10);
-        users[username].password = hashedPassword;
-        fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
+    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const roomName = requestedRoomName?.trim() || `${username}'s Room`;
 
-        res.status(200).json({ message: 'Password Changes Successfully' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// 注销
-app.delete('/user/delete/:username', (req, res) => {
-    try {
-        const username = req.params.username;
-        const { password } = req.body;
-        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
-        
-        if (bcrypt.compareSync(password, users[username].password)) {
-            delete users[username];
-            fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
-            return res.status(200).json({ message: 'User Deleted Successfully' });
-        }
-
-        res.status(401).json({ error: 'Wrong Password' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// --- 游戏大厅 (Lobby) ---
-
-// 获取房间列表
-app.get('/lobby', (req, res) => {
-    try {
-        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
-        res.status(200).json(lobbies);
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// 创建房间
-app.post('/lobby', (req, res) => {
-    try {
-        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
-        const { name, settings, owner } = req.body;
-        if (!name || !settings) {
-            return res.status(400).json({ error: 'Name and Settings cannot be Empty'} );
-        }
-    
-        const id = name + Date.now();
-        const newLobby = {
-            name: name, 
-            owner: owner,
-            players: [], 
-            settings: settings,
-            status: 'waiting'
-        };
-    
-        lobbies[id] = newLobby;
-        fs.writeFileSync('db/lobbies.json', JSON.stringify(lobbies, null, 2), 'utf-8');
-        res.status(201).json({ message: 'Create a Lobby Successfully' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// 获取特定房间信息
-app.get('/lobby/:lobbyId', (req, res) => {
-    try {
-        const Id = req.params.lobbyId;
-        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
-        if (Id in lobbies) {
-            return res.status(200).json(lobbies[Id]);
-        }
-
-        res.status(404).json({ error: 'Lobby Not Found' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// 删除特定房间
-app.delete('/lobby/:lobbyId', (req, res) => {
-    try {
-        const Id = req.params.lobbyId;
-        const lobbies = JSON.parse(fs.readFileSync('db/lobbies.json', 'utf-8'));
-        if (Id in lobbies) {
-            delete lobbies[Id];
-            fs.writeFileSync('db/lobbies.json', JSON.stringify(lobbies, null, 2), 'utf-8');
-            res.status(200).json({ message: 'Lobby Deleted Successfully' });
-        }
-
-        res.status(404).json({ error: 'Lobby Not Found' });
-    }
-    catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-})
-
-// ==========================================
-// 4. Socket.io 实时通信
-// ==========================================
-io.on('connect', (socket) => {
-    console.log('A user connected:', socket.id);
-
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
+    socket.join(roomId);
+    rooms.set(roomId, {
+      roomName,
+      hostId: socket.id,
+      players: new Set([socket.id]),
+      usernameMap: new Map([[socket.id, username]]),
+      settings: { mode: 'classic' }
     });
 
-    // 示例：加入房间事件
-    socket.on('join_lobby', (lobbyId) => {
-        console.log(`Socket ${socket.id} joining lobby ${lobbyId}`);
-        socket.join(lobbyId);
-    });
+    socket.emit('lobbyCreated', { roomId, roomName });
+    io.to(roomId).emit('playersUpdate', [username]);
+  });
+
+  socket.on('joinLobby', (roomId) => {
+    if (!username) return;
+    const upperId = roomId.toUpperCase();
+    const room = rooms.get(upperId);
+
+    if (!room || room.players.size >= 4) {
+      return socket.emit('joinError', 'Room not found or full');
+    }
+
+    socket.join(upperId);
+    room.players.add(socket.id);
+    room.usernameMap.set(socket.id, username);
+
+    io.to(upperId).emit('playersUpdate', Array.from(room.usernameMap.values()));
+    socket.emit('joinedLobby', { roomId: upperId, roomName: room.roomName });
+    socket.emit('modeSet', room.settings.mode);
+  });
+
+  socket.on('setMode', ({ roomId, mode }) => {
+    const room = rooms.get(roomId);
+    if (room && room.hostId === socket.id && MODES[mode]) {
+      room.settings.mode = mode;
+      io.to(roomId).emit('modeSet', mode);
+    }
+  });
+
+  socket.on('startGame', (roomId) => {
+    const room = rooms.get(roomId);
+    if (room && room.hostId === socket.id) {
+      const { w, h, m } = MODES[room.settings.mode];
+      const board = generateBoard(w, h, m);
+      const revealed = Array(h).fill().map(() => Array(w).fill(false));
+      const flagged = Array(h).fill().map(() => Array(w).fill(false));
+
+      room.state = {
+        board,
+        revealed,
+        flagged,
+        signals: [],
+        startTime: Date.now(),
+        gameOver: false
+      };
+
+      io.to(roomId).emit('gameStarted', {
+        board,
+        revealed,
+        flagged,
+        roomId,
+        mode: room.settings.mode,
+        startTime: room.state.startTime
+      });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`${username || 'Someone'} disconnected`);
+  });
 });
 
-// ==========================================
-// 5. 启动服务器
-// ==========================================
-const PORT = 8000;
-server.listen(PORT, () => {
-    console.log(`LAN Game server running at http://localhost:${PORT}`);
+// ==================== 工具函数 ====================
+
+function generateBoard(width, height, numMines) {
+  const board = Array.from({ length: height }, () => Array(width).fill(0));
+
+  // 放雷
+  let placed = 0;
+  while (placed < numMines) {
+    const r = Math.floor(Math.random() * height);
+    const c = Math.floor(Math.random() * width);
+    if (board[r][c] !== -1) {
+      board[r][c] = -1;
+      placed++;
+    }
+  }
+
+  // 计算数字
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      if (board[r][c] === -1) continue;
+      let count = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < height && nc >= 0 && nc < width && board[nr][nc] === -1) count++;
+        }
+      }
+      board[r][c] = count;
+    }
+  }
+  return board;
+}
+
+// ==================== 启动服务器 ====================
+
+server.listen(8000, () => {
+  console.log('Multisweeper 服务器启动成功！http://localhost:8000');
 });

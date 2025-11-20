@@ -11,8 +11,6 @@ yarn-error.log*
 # OS generated files
 .DS_Store
 Thumbs.db
-package-lock.json
-package.json
 
 # Environment files
 .env
@@ -31,9 +29,9 @@ package.json
 *.swp
 *.swo
 
-# Lowdb database folder
-db
+
+db/
+db.json
+
+
 test_auth.py
-
-
-
