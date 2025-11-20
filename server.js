@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require("bcrypt");
-const { Hash } = require("crypto");
+const { Hash, hash } = require("crypto");
 const session = require("express-session");
 
 const app = express();
@@ -14,9 +14,6 @@ const io = new Server(server);
 // ==========================================
 // 1. 全局变量与工具函数
 // ==========================================
-// 内存中存储房间列表 (重启后清空)
-const lobbies = []; 
-
 // 初始化数据库文件
 if (!fs.existsSync('db')) {
     fs.mkdirSync('db');
@@ -25,6 +22,10 @@ if (!fs.existsSync('db')) {
 // 如果文件不存在，或者文件为空，写入空对象 {}
 if (!fs.existsSync('db/users.json') || fs.readFileSync('db/users.json', 'utf-8').trim() === '') {
     fs.writeFileSync('db/users.json', '{}');
+}
+
+if (!fs.existsSync('db/lobby.json') || fs.readFileSync('db/lobby.json', 'utf-8').trim() === '') {
+    fs.writeFileSync('db/lobby.json', '{}');
 }
 
 const gameSession = session({
@@ -50,7 +51,7 @@ function containWordCharsOnly(text) {
 // --- 用户认证 (Auth) ---
 
 // 注册
-app.post('/api/v1/auth/register', (req, res) => {
+app.post('/user/register', (req, res) => {
     try {
         const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
         const { username, password, name } = req.body;
@@ -85,7 +86,7 @@ app.post('/api/v1/auth/register', (req, res) => {
 });
 
 // 登录
-app.post('/api/v1/auth/login', (req, res) => {
+app.post('/user/login', (req, res) => {
     try {
         const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
         const { username, password } = req.body;
@@ -111,29 +112,100 @@ app.post('/api/v1/auth/login', (req, res) => {
 });
 
 // 登出
-app.post('/api/v1/auth/logout', (req, res) => {
-    if (!req.session.user) {
-        return res.status(401).json({ error: 'User is Not Logged In' });
-    }
-
-    req.session.destroy((err) => {
-        if (err) {
-            return res.status(500).json({ error: 'Logout Failed' });
+app.post('/user/logout', (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'User is Not Logged In' });
         }
-        res.clearCookie('connect.sid'); // 清除客户端 Cookie
-        res.status(200).json({ message: 'User Logged Out Successfully' });
-    });
+    
+        req.session.destroy((err) => {
+            if (err) {
+                return res.status(500).json({ error: 'Logout Failed' });
+            }
+            res.clearCookie('connect.sid'); // 清除客户端 Cookie
+            res.status(200).json({ message: 'User Logged Out Successfully' });
+        });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
 
 // 验证
-// Handle the /validate endpoint
-app.get('/api/v1/auth/validate', (req, res) => {
-    if (req.session.user) {
-        res.status(200).json({ user: req.session.user });
+app.get('/user/validate', (req, res) => {
+    try {
+        if (req.session.user) {
+            res.status(200).json({ user: req.session.user });
+        }
+        else {
+            res.status(401).json({ error: "User Has Not Signed In" });
+        }   
     }
-    else {
-        res.status(401).json({ error: "User Has Not Signed In" });
-    }   
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// 更新用户信息
+app.put('/user/update/username/:username', (req, res) => {
+    try {
+        const username = req.params.username;
+        const { name } = req.body;
+        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
+
+        users[username].name = name;
+        if (req.session.user && req.session.user.username === username) {
+             req.session.user.name = name;
+        }
+        fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
+
+        res.status(200).json({ message: 'Name Changes Successfully' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+app.put('/user/update/password/:username', (req, res) => {
+    try {
+        const username = req.params.username;
+        const { password } = req.body;
+        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
+
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        users[username].password = hashedPassword;
+        fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
+
+        res.status(200).json({ message: 'Password Changes Successfully' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// 注销
+app.delete('/user/delete/:username', (req, res) => {
+    try {
+        const username = req.params.username;
+        const { password } = req.body;
+        const users = JSON.parse(fs.readFileSync('db/users.json', 'utf-8'));
+        
+        if (bcrypt.compareSync(password, users[username].password)) {
+            delete users[username];
+            fs.writeFileSync('db/users.json', JSON.stringify(users, null, 2), 'utf-8');
+            return res.status(200).json({ message: 'User Deleted Successfully' });
+        }
+
+        res.status(401).json({ error: 'Wrong Password' });
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
 
 // --- 游戏大厅 (Lobby) ---
