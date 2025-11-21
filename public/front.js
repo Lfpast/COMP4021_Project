@@ -1,56 +1,54 @@
-const socket = io();
+// Utility function
+const $ = (id) => document.getElementById(id);
+
+let socket = null;  // 关键：不要在顶部连接！
 let username = localStorage.getItem('username');
 let currentRoom = null;
 let isHost = false;
 
-const $ = (id) => document.getElementById(id);
-
-if (username) {
-  document.addEventListener('DOMContentLoaded', showMain);
-} else {
-  document.addEventListener('DOMContentLoaded', () => {
+// DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  if (username) {
+    showMain();
+  } else {
+    $('loginModal').style.display = 'flex';
     $('registerBtn')?.addEventListener('click', handleRegister);
     $('loginBtn')?.addEventListener('click', handleLogin);
-  });
-}
+  }
+});
 
 // ================== Login and Registration ==================
 async function handleRegister() {
   const u = $('username').value.trim();
   const p = $('password').value;
-  if (!u || !p) return $('loginMsg').textContent = 'Please fill in username and password';
+  if (!u || !p) return msg('Please fill in username and password', '#f66');
 
-  const res = await fetch('/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
+  const res = await fetch('/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
   const data = await res.json();
-  $('loginMsg').textContent = data.success ? 'Registration successful! Please log in' : (data.msg || 'Registration failed');
-  $('loginMsg').style.color = data.success ? '#6f6' : '#f66';
+  msg(data.success ? 'Registration successful! Please log in' : (data.msg || 'Registration failed'), data.success ? '#6f6' : '#f66');
 }
 
 async function handleLogin() {
   const u = $('username').value.trim();
   const p = $('password').value;
-  if (!u || !p) return $('loginMsg').textContent = 'Please fill in username and password';
+  if (!u || !p) return msg('Please fill in username and password', '#f66');
 
-  const res = await fetch('/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
+  const res = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
   const data = await res.json();
 
   if (data.success) {
     username = u;
     localStorage.setItem('username', u);
-    socket.emit('auth', username);
-    showMain();
+    showMain();  // 登录成功 → 进入大厅
   } else {
-    $('loginMsg').textContent = data.msg || 'Incorrect username or password';
-    $('loginMsg').style.color = '#f66';
+    msg(data.msg || 'Incorrect username or password', '#f66');
   }
+}
+
+function msg(text, color) {
+  const el = $('loginMsg');
+  el.textContent = text;
+  el.style.color = color;
 }
 
 // ================== 主界面显示与所有事件绑定 ==================
@@ -59,11 +57,18 @@ function showMain() {
   $('mainPage').style.display = 'block';
   $('welcomeUser').textContent = username;
 
+  // 关键修复：每次进入大厅都重新连接 socket！
+  if (!socket || !socket.connected) {
+    socket = io();
+    socket.emit('auth', username);
+    setupSocketEvents();  // 重新绑定所有事件
+  }
+
   loadStats();
   loadTheme();
   initGameplaySettings();
   bindLobbyEvents();
-  bindLogout(); // 新增：绑定登出
+  bindLogout();
 }
 
 function bindLogout() {
@@ -73,12 +78,10 @@ function bindLogout() {
   };
 }
 
-// 所有大厅按钮事件绑定
 function bindLobbyEvents() {
   $('createLobbyBtn').onclick = () => {
-    const roomName = $('roomNameInput').value.trim();
-    const finalName = roomName || `${username}'s Room`;
-    socket.emit('createLobby', finalName);
+    const roomName = $('roomNameInput').value.trim() || `${username}'s Room`;
+    socket.emit('createLobby', roomName);
   };
 
   $('joinLobbyBtn').onclick = () => {
@@ -90,49 +93,71 @@ function bindLobbyEvents() {
   $('copyRoomBtn').onclick = () => {
     navigator.clipboard.writeText($('currentRoomId').textContent);
     const btn = $('copyRoomBtn');
+    const old = btn.textContent;
     btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy ID', 2000);
+    setTimeout(() => btn.textContent = old, 1500);
   };
 
-  $('modeSelect').onchange = e => {
-    if (isHost) socket.emit('setMode', { roomId: currentRoom, mode: e.target.value });
+  $('modeSelect').onchange = (e) => {
+    if (isHost && currentRoom) {
+      socket.emit('setMode', { roomId: currentRoom, mode: e.target.value });
+    }
+  };
+
+  $('startGameBtn').onclick = () => {
+    if (isHost && currentRoom) {
+      socket.emit('startGame', currentRoom);
+    }
   };
 }
 
-// ================== Socket Events ==================
-socket.on('lobbyCreated', (data) => {
-  currentRoom = data.roomId;
-  isHost = true;
-  $('currentRoomName').textContent = data.roomName;
-  enterRoom();
-});
+// 所有 socket 事件集中绑定，防止重复绑定
+function setupSocketEvents() {
+  // 先清除旧监听（防止重复）
+  socket.off('lobbyCreated');
+  socket.off('joinedLobby');
+  socket.off('playersUpdate');
+  socket.off('modeSet');
+  socket.off('joinError');
 
-socket.on('joinedLobby', (data) => {
-  currentRoom = data.roomId;
-  $('currentRoomName').textContent = data.roomName;
-  enterRoom();
-});
+  socket.on('lobbyCreated', (data) => {
+    currentRoom = data.roomId;
+    isHost = true;
+    $('currentRoomName').textContent = data.roomName || `${username}'s Room`;
+    $('currentRoomId').textContent = data.roomId;
+    $('roomInfo').style.display = 'block';
+    $('hostControls').style.display = 'block';
+  });
 
-socket.on('joinError', msg => alert('Join failed: ' + msg));
+  socket.on('joinedLobby', (data) => {
+    currentRoom = data.roomId;
+    isHost = false;
+    $('currentRoomName').textContent = data.roomName || 'Room';
+    $('currentRoomId').textContent = data.roomId;
+    $('roomInfo').style.display = 'block';
+    $('hostControls').style.display = 'none';
+  });
 
-socket.on('playersUpdate', players => {
-  const list = $('playersList');
-  list.innerHTML = players.map(p => `<li>${p} ${p === username ? '<span style="color:#0af">(You)</span>' : ''}</li>`).join('');
-});
+  socket.on('playersUpdate', (players) => {
+    const list = $('playersList');
+    list.innerHTML = '';
+    players.forEach(p => {
+      const li = document.createElement('li');
+      li.innerHTML = `${p} ${p === username ? '<span style="color:#0af">(You)</span>' : ''}`;
+      list.appendChild(li);
+    });
+  });
 
-socket.on('modeSet', mode => $('modeSelect').value = mode);
+  socket.on('modeSet', (mode) => {
+    $('modeSelect').value = mode;
+  });
 
-socket.on('gameStarted', () => {
-  alert('Game started! Waiting for Member 3 to complete the game page...');
-});
-
-function enterRoom() {
-  $('roomInfo').style.display = 'block';
-  $('currentRoomId').textContent = currentRoom;
-  $('hostControls').style.display = isHost ? 'block' : 'none';
+  socket.on('joinError', (msg) => {
+    alert('Join failed: ' + msg);
+  });
 }
 
-// ================== Stats, Theme, Settings (不变) ==================
+// ================== Stats, Theme, Settings (保持不变) ==================
 async function loadStats() {
   try {
     const res = await fetch(`/stats/${username}`);
