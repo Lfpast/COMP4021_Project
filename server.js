@@ -20,21 +20,27 @@ const MODES = {
     expert: { w: 30, h: 16, m: 99 }
 };
 
+
 // ==================== 数据存储初始化 ====================
-// 确保 db 目录存在
-if (!fs.existsSync('db')) {
-    fs.mkdirSync('db');
+function ensureDbAndFiles() {
+    // 确保 db 目录存在
+    if (!fs.existsSync('db')) {
+        fs.mkdirSync('db');
+    }
+    // 初始化 users.json
+    const usersPath = 'db/users.json';
+    if (!fs.existsSync(usersPath) || fs.readFileSync(usersPath, 'utf-8').trim() === '') {
+        fs.writeFileSync(usersPath, '[]');
+    }
+    // 初始化 lobbies.json
+    const lobbiesPath = 'db/lobbies.json';
+    if (!fs.existsSync(lobbiesPath) || fs.readFileSync(lobbiesPath, 'utf-8').trim() === '') {
+        fs.writeFileSync(lobbiesPath, '{}');
+    }
 }
 
-// 初始化 users.json
-if (!fs.existsSync('db/users.json') || fs.readFileSync('db/users.json', 'utf-8').trim() === '') {
-    fs.writeFileSync('db/users.json', '[]');
-}
-
-// 初始化 lobbies.json
-if (!fs.existsSync('db/lobbies.json') || fs.readFileSync('db/lobbies.json', 'utf-8').trim() === '') {
-    fs.writeFileSync('db/lobbies.json', '{}');
-}
+// 启动时保证数据文件存在并初始化
+ensureDbAndFiles();
 
 // 辅助函数：读取和写入
 async function readUsers() {
