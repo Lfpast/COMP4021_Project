@@ -214,6 +214,79 @@ io.on('connection', (socket) => {
         }
     });
 
+    // =====================================================================================
+    // [新增功能开发区] 待前端/全栈同学实现的交互逻辑
+    // 目标：实现 README 中描述的实时协作、信号系统、自定义模式及胜负判定
+    // =====================================================================================
+
+    // 1. 处理点击翻开格子 (Gameplay - Reveal)
+    // 前端调用: socket.emit('revealTile', { roomId, r, c })
+    socket.on('revealTile', async ({ roomId, r, c }) => {
+        const room = rooms.get(roomId);
+        if (!room || !room.state || room.state.gameOver) return;
+
+        // TODO 1: 获取 room.state.board[r][c] 的值
+        // TODO 2: 如果是雷 (-1):
+        //    - 设置 room.state.gameOver = true
+        //    - 更新统计数据 (stats) 记录失败
+        //    - 广播 'gameOver' 事件: io.to(roomId).emit('gameOver', { winner: false, bomb: {r, c} })
+        
+        // TODO 3: 如果是数字 (>0):
+        //    - 仅更新 room.state.revealed[r][c] = true
+        //    - 广播 'boardUpdate' 事件: io.to(roomId).emit('boardUpdate', { revealed: room.state.revealed })
+        
+        // TODO 4: 如果是空白 (0):
+        //    - 执行 Flood Fill 算法，递归翻开周围所有空白及边缘数字
+        //    - 更新 room.state.revealed
+        //    - 广播 'boardUpdate'
+        
+        // TODO 5: 检查胜利条件 (所有非雷格子都已翻开)
+        //    - 若胜利: 更新统计数据, 广播 'gameOver' { winner: true }
+    });
+
+    // 2. 处理插旗/标记 (Gameplay - Flag)
+    // 前端调用: socket.emit('toggleFlag', { roomId, r, c })
+    socket.on('toggleFlag', ({ roomId, r, c }) => {
+        const room = rooms.get(roomId);
+        if (!room || !room.state || room.state.gameOver) return;
+
+        // TODO: 切换 room.state.flagged[r][c] 的状态
+        // TODO: 广播 'flagUpdate' 事件: io.to(roomId).emit('flagUpdate', { r, c, isFlagged: ... })
+    });
+
+    // 3. 鼠标拖拽信号系统 (Gameplay - Signals)
+    // 前端调用: socket.emit('sendSignal', { roomId, type, r, c })
+    // type: 'help' (左), 'onMyWay' (右), 'avoid' (上), 'question' (下)
+    socket.on('sendSignal', ({ roomId, type, r, c }) => {
+        // 直接广播给房间内其他人，用于显示临时特效
+        socket.to(roomId).emit('signalReceived', { 
+            type, r, c, 
+            fromUser: username 
+        });
+    });
+
+    // 4. 自定义难度设置 (Lobby - Custom Mode)
+    // 前端调用: socket.emit('setCustomMode', { roomId, w, h, m })
+    socket.on('setCustomMode', ({ roomId, w, h, m }) => {
+        const room = rooms.get(roomId);
+        if (room && room.hostId === socket.id) {
+            // TODO: 校验参数范围 (例如 w: 5-50, h: 5-30)
+            // TODO: 更新 room.settings.mode = 'custom'
+            // TODO: 更新 room.settings.customParams = { w, h, m }
+            // TODO: 广播模式变更
+        }
+    });
+
+    // 5. 作弊功能开关 (Cheating)
+    // 前端调用: socket.emit('toggleCheat', { roomId, enable })
+    socket.on('toggleCheat', ({ roomId, enable }) => {
+        // TODO: 记录房间作弊状态，可能会影响最终统计 (如不计入排行榜)
+    });
+
+    // =====================================================================================
+    // [新增功能开发区结束]
+    // =====================================================================================
+
     socket.on('disconnect', async () => {
         console.log(`${username || 'Someone'} disconnected`);
         
