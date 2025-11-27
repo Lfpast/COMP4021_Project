@@ -10,29 +10,31 @@
 <body>
   <!-- Login / Registration Modal -->
   <div id="loginModal" class="modal">
-    <div class="modal-content">
-      <h1>Multisweeper</h1>
-      <p style="margin:10px 0 20px; color:#666;">Multiplayer Minesweeper Game</p>
-      
-      <input type="text" id="username" placeholder="Username (Unique ID)" autocomplete="off">
-      <input type="text" id="nickname" placeholder="Nickname (Display Name)" autocomplete="off">
-      <input type="password" id="password" placeholder="Password" autocomplete="off">
-      
-      <div class="btn-group">
+    <div class="modal-content login-split-container">
+      <div class="login-section">
+        <h2>Register</h2>
+        <input type="text" id="regUsername" placeholder="Username" autocomplete="off">
+        <input type="text" id="regNickname" placeholder="Nickname" autocomplete="off">
+        <input type="password" id="regPassword" placeholder="Password" autocomplete="off">
         <button id="registerBtn" class="big-btn">Register</button>
+      </div>
+      <div class="login-divider"></div>
+      <div class="login-section">
+        <h2>Login</h2>
+        <input type="text" id="loginUsername" placeholder="Username" autocomplete="off">
+        <input type="password" id="loginPassword" placeholder="Password" autocomplete="off">
         <button id="loginBtn" class="big-btn">Login</button>
       </div>
       
-      <!-- 关键：这个提示框必须存在！ -->
-      <p id="loginMsg" style="margin-top:15px; min-height:24px; font-weight:bold; opacity:0; transition:opacity 0.5s;"></p>
+      <p id="loginMsg" style="position:absolute; bottom:15px; left:0; right:0; margin:0; font-weight:bold; opacity:0; transition:opacity 0.5s;"></p>
     </div>
   </div>
 
   <!-- Main Lobby Page -->
   <div id="mainPage" style="display:none">
     <div class="header">
-      <h1>Multisweeper</h1>
-      <button id="logoutBtn">Logout</button>
+    <h1>Multisweeper</h1>
+    <button id="logoutBtn" class="big-btn">Logout</button>
     </div>
 
     <div class="container">
@@ -41,6 +43,11 @@
         <h2>Welcome, <span id="welcomeUser"></span>!</h2>
 
         <h3 style="margin:20px 0 10px;">Join a Room</h3>
+        
+        <div id="lobbyListContainer" class="lobby-list">
+            <div style="padding:10px; color:#888; text-align:center;">Loading oms...</div>
+        </div>
+
         <div class="join-box" style="margin-bottom:25px;">
           <input type="text" id="roomInput" placeholder="Enter Room ID">
           <button id="joinLobbyBtn">Join Room</button>
@@ -59,6 +66,7 @@
             <option value="expert">Expert (30×16, 99 mines)</option>
           </select>
           <button id="startGameBtn" class="big-btn" style="margin-top:12px;">Start Game</button>
+          <button id="deleteRoomBtn" class="big-btn" style="margin-top:12px; background: linear-gradient(to bottom, #ff6b6b, #c0392b) !important;">Delete Room</button>
         </div>
 
         <div id="roomInfo" style="display:none; margin-top:25px; padding:18px; background:rgba(0,0,0,0.06); border-radius:12px;">
@@ -78,6 +86,15 @@
       <div class="right-panel">
         <div id="personalStats">
           <h3>Personal Statistics</h3>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; justify-content:center;">
+            <label for="statsModeSelect" style="font-weight:600;">Mode</label>
+            <select id="statsModeSelect" style="padding:8px; border-radius:8px;">
+              <option value="classic">Classic</option>
+              <option value="simple">Simple</option>
+              <option value="medium">Medium</option>
+              <option value="expert">Expert</option>
+            </select>
+          </div>
   
           <div class="stat-row">
             <span class="stat-label">Games Played</span>
@@ -99,10 +116,7 @@
             <span id="statBestTime" class="stat-value">--:--</span>
           </div>
   
-          <div class="stat-row">
-            <span class="stat-label">Total Play Time</span>
-            <span id="statTotalTime" class="stat-value">0h 0m</span>
-          </div>
+          <!-- Total Play Time removed per request -->
         </div>
 
         <h3 style="margin-top: 32px;">Settings</h3>
@@ -139,7 +153,6 @@
   <div id="gamePage" style="display:none; height:100vh; position:relative;">
     <div class="header">
       <h1>Multisweeper - Game</h1>
-      <button id="leaveGameBtn">Leave Room</button>
     </div>
 
     <div class="game-container">
@@ -167,29 +180,9 @@
         <h2 id="overTitle">Game Over!</h2>
         <p id="overMessage"></p>
         <div id="overStats" style="margin:20px 0;"></div>
-        <button id="startNewGameBtn" class="big-btn" style="background:#2ecc71; display:none;">Start New Game</button> 
-        <button id="restartOverBtn" class="big-btn">Play Again</button>
-        <button id="backToLobbyBtn">Back to Lobby</button>
-      </div>
-    </div>
-    <!-- Owner options when clicking Leave Room -->
-    <div id="ownerCloseModal" class="modal" style="display:none;">
-      <div class="modal-content">
-        <p>Room owner options:</p>
-        <div class="modal-actions">
-          <button id="continueBtn">Continue Game</button>
-          <button id="closeRoomBtn">Close the Room</button>
-          <button id="cancelCloseBtn">Cancel</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- When server closes room, everybody gets this -->
-    <div id="roomClosedModal" class="modal" style="display:none;">
-      <div class="modal-content">
-        <p id="roomClosedMsg">Room Owner Close the Game</p>
-        <div class="modal-actions">
-          <button id="backToLobbyBtn">Back to Lobby</button>
+        <div class="btn-group">
+          <button id="startNewGameBtn" class="big-btn" style="background:#2ecc71; display:none;">Start New Game</button>
+          <button id="overBackToLobbyBtn" class="big-btn">Back to Lobby</button>
         </div>
       </div>
     </div>

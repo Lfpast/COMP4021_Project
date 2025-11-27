@@ -82,7 +82,8 @@ app.post('/register', async (req, res) => {
     users[username] = {
         name: name,
         password: hash,
-        stats: Object.fromEntries(Object.keys(MODES).map(mode => [mode, { games: 0, wins: 0, bestTime: Infinity }]))
+        // Use null for bestTime to remain JSON safe and easy to check
+        stats: Object.fromEntries(Object.keys(MODES).map(mode => [mode, { games: 0, wins: 0, bestTime: null }]))
     };
     
     await writeUsers(users);
@@ -130,8 +131,26 @@ const SESSIONS = new Map(); // token -> username
 // 启动时从 lobbies.json 加载房间到内存 (可选，如果需要重启后恢复房间)
 // 目前逻辑是重启后房间清空，lobbies.json 仅作为持久化记录
 
+function getLobbyList() {
+    return Array.from(rooms.entries()).map(([id, r]) => ({
+        id,
+        name: r.roomName,
+        host: r.playerInfo.get(r.hostId)?.name || 'Unknown',
+        hostUsername: r.playerInfo.get(r.hostId)?.username, // [Fix] Send username for logic checks
+        players: r.players.size,
+        mode: r.settings.mode,
+        status: (r.state && !r.state.gameOver) ? 'Playing' : 'Waiting'
+    }));
+}
+
+function broadcastLobbyList() {
+    io.emit('lobbyList', getLobbyList());
+}
+
 io.on('connection', (socket) => {
     let username = null;
+
+    socket.emit('lobbyList', getLobbyList());
 
     socket.on('auth', (user) => { username = user; });
 
@@ -170,7 +189,14 @@ io.on('connection', (socket) => {
         await writeLobbies(lobbies);
 
         socket.emit('lobbyCreated', { roomId, roomName });
-        io.to(roomId).emit('playersUpdate', Array.from(roomData.playerInfo.values()));
+        
+        // [Refactor] Send players with host info
+        const playersList = Array.from(roomData.playerInfo.entries()).map(([sid, p]) => ({
+            ...p,
+            isHost: sid === roomData.hostId
+        }));
+        io.to(roomId).emit('playersUpdate', playersList);
+        broadcastLobbyList();
     });
 
     socket.on('joinLobby', async (roomId) => {
@@ -185,6 +211,13 @@ io.on('connection', (socket) => {
         // [Refactor] 获取用户昵称
         const users = await readUsers();
         const nickname = users[username]?.name || username;
+
+        // Check if this user is the original host (from persistence)
+        const lobbiesCheck = await readLobbies();
+        const lobby = lobbiesCheck[upperId];
+        if (lobby && lobby.host === username) {
+            room.hostId = socket.id; // Reclaim host status
+        }
 
         // 在 socket.join(upperId) 之前，清理房间中可能已存在的相同 username（比如刷新重连的旧 socket）
         for (const [sid, info] of room.playerInfo.entries()) {
@@ -208,12 +241,16 @@ io.on('connection', (socket) => {
             }
         }
 
-        io.to(upperId).emit('playersUpdate', Array.from(room.playerInfo.values()));
+        io.to(upperId).emit('playersUpdate', Array.from(room.playerInfo.entries()).map(([sid, p]) => ({
+            ...p,
+            isHost: sid === room.hostId
+        })));
         socket.emit('joinedLobby', { roomId: upperId, roomName: room.roomName });
         socket.emit('modeSet', room.settings.mode);
 
-        // [新增] 如果房间游戏已经开始，立即发送当前状态给新加入的玩家
-        if (room.state && room.state.board) {
+        // [Modified] Only send game state if the game is actively playing.
+        // If the game is over, new joiners should wait in the lobby for the next game.
+        if (room.state && room.state.board && !room.state.gameOver) {
             // 发送游戏开始信号（带上当前的棋盘和揭开状态）
             socket.emit('gameStarted', {
                 board: room.state.board,
@@ -223,17 +260,8 @@ io.on('connection', (socket) => {
                 mode: room.settings.mode,
                 startTime: room.state.startTime
             });
-
-            // 如果游戏其实已经结束了（比如看着残局），也发送结束状态
-            if (room.state.gameOver) {
-                 socket.emit('gameOver', { 
-                    winner: room.state.winner,
-                    bomb: room.state.bombPos, 
-                    board: room.state.board, // 确保传回 board
-                    revealed: room.state.revealed
-                });
-            }
         }
+        broadcastLobbyList();
     });
 
     socket.on('setMode', async ({ roomId, mode }) => {
@@ -266,7 +294,8 @@ io.on('connection', (socket) => {
                 flagged,
                 signals: [],
                 startTime: Date.now(),
-                gameOver: false
+                gameOver: false,
+                mines: m // Store mines count for updates
             };
 
             io.to(roomId).emit('gameStarted', {
@@ -277,6 +306,7 @@ io.on('connection', (socket) => {
                 mode: room.settings.mode,
                 startTime: room.state.startTime
             });
+            broadcastLobbyList();
         }
     });
 
@@ -302,6 +332,7 @@ io.on('connection', (socket) => {
                 revealed: room.state.revealed,
                 flagged: room.state.flagged
             });
+            broadcastLobbyList(); // [Fix] Update lobby status to 'Playing'
         }
     });
 
@@ -333,6 +364,8 @@ io.on('connection', (socket) => {
             room.state.gameOver = true;
             room.state.winner = false;
             room.state.bombPos = { r, c };
+                // Update Stats (Loss)
+                await updateRoomStats(room, { winner: false });
             
             // Show all mines to all the players
             for (let y = 0; y < board.length; y++) {
@@ -347,6 +380,7 @@ io.on('connection', (socket) => {
                 board: room.state.board,
                 revealed: room.state.revealed
             });
+            broadcastLobbyList();
             return;
         }
 
@@ -398,10 +432,15 @@ io.on('connection', (socket) => {
         if (win) {
             room.state.gameOver = true;
             room.state.winner = true;
+            const time = Date.now() - room.state.startTime;
+            // Update Stats (Win)
+            await updateRoomStats(room, { winner: true, time });
+
             io.to(roomId).emit('gameOver', { 
                 winner: true,
-                time: Date.now() - room.state.startTime
+                time: time
             });
+            broadcastLobbyList();
         }
 
         // Broadcast the updated revealed state
@@ -462,47 +501,112 @@ io.on('connection', (socket) => {
         // TODO: 记录房间作弊状态，可能会影响最终统计 (如不计入排行榜)
     });
 
+    // 6. 删除房间 (Host Only)
+    socket.on('deleteRoom', async (roomId) => {
+        const room = rooms.get(roomId);
+        // Check if room exists and requester is host
+        if (room && room.hostId === socket.id) {
+            // Notify all players
+            io.to(roomId).emit('roomDeleted');
+            
+            // Clear from memory
+            rooms.delete(roomId);
+            
+            // Clear from persistence
+            const lobbies = await readLobbies();
+            if (lobbies[roomId]) {
+                delete lobbies[roomId];
+                await writeLobbies(lobbies);
+            }
+            
+            // Broadcast update
+            broadcastLobbyList();
+        }
+    });
+
     // =====================================================================================
     // [新增功能开发区结束]
     // =====================================================================================
+
+    socket.on('leaveRoom', async ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room && room.players.has(socket.id)) {
+            // 1. Identify user
+            const leavingUser = room.playerInfo.get(socket.id)?.username || username;
+
+            // 2. Remove from memory
+            room.players.delete(socket.id);
+            room.playerInfo.delete(socket.id);
+
+            // 3. Update persistence
+            const lobbies = await readLobbies();
+            if (lobbies[roomId]) {
+                if (leavingUser) {
+                    lobbies[roomId].players = (lobbies[roomId].players || []).filter(u => u !== leavingUser);
+                }
+                await writeLobbies(lobbies);
+            }
+
+            // 4. Update room players list
+            if (room.players.size > 0) {
+                io.to(roomId).emit('playersUpdate', Array.from(room.playerInfo.entries()).map(([sid, p]) => ({
+                    ...p,
+                    isHost: sid === room.hostId
+                })));
+            } else {
+                // If no players left, game ends
+                if (room.state) {
+                    room.state.gameOver = true;
+                }
+            }
+
+            // 5. Broadcast update
+            broadcastLobbyList();
+        }
+    });
 
     socket.on('disconnect', async () => {
         console.log(`${username || 'Someone'} disconnected`);
         
         for (const [roomId, room] of rooms.entries()) {
             if (room.players.has(socket.id)) {
-                // 1. 从内存移除
+                // 1. Identify user
+                const leavingUser = room.playerInfo.get(socket.id)?.username || username;
+
+                // 2. Remove from memory
                 room.players.delete(socket.id);
                 room.playerInfo.delete(socket.id);
 
-                // 更新持久化存储：安全地移除所有与该 socket 对应的 username
+                // 3. Update persistence (Remove player from list, but KEEP ROOM)
                 const lobbies = await readLobbies();
                 if (lobbies[roomId]) {
-                    // 获取要删除的 username（优先从 room.playerInfo 中读取）
-                    const leavingUser = room.playerInfo.get(socket.id)?.username || username;
                     if (leavingUser) {
                         lobbies[roomId].players = (lobbies[roomId].players || []).filter(u => u !== leavingUser);
                     }
-                    if (room.players.size === 0) {
-                        rooms.delete(roomId);
-                        delete lobbies[roomId];
-                        await writeLobbies(lobbies);
-                        return;
-                    } else {
-                        await writeLobbies(lobbies);
+                    // Requirement 8: Do not destroy room even if empty
+                    await writeLobbies(lobbies);
+                }
+
+                // 4. Update room players list for remaining players
+                if (room.players.size > 0) {
+                    io.to(roomId).emit('playersUpdate', Array.from(room.playerInfo.entries()).map(([sid, p]) => ({
+                        ...p,
+                        isHost: sid === room.hostId
+                    })));
+                } else {
+                    // Requirement 10: If no players left, game ends
+                    if (room.state) {
+                        room.state.gameOver = true;
+                        // [New] If game was in progress, count as loss for stats? 
+                        // Or just end it. For now, just end it.
                     }
                 }
 
-                // 3. 更新房间名单
-                io.to(roomId).emit('playersUpdate', {
-                    players: Array.from(room.playerInfo.values()), // 每一项形如 { username, name }
-                    hostUsername: room.playerInfo.get(room.hostId)?.username || null
-                });
-
-                // 4. 房主离开处理
-                if (room.hostId === socket.id) {
-                    room.hostId = null; // 无法再开始游戏
-                }
+                // 5. Host handling
+                // We leave room.hostId as is (pointing to dead socket). 
+                // If host reconnects, joinLobby will restore their status based on lobbies.json
+                
+                broadcastLobbyList();
                 break;
             }
         }
@@ -541,6 +645,48 @@ function generateBoard(width, height, numMines) {
         }
     }
     return board;
+}
+
+// 更新房间玩家的统计数据 (统一处理胜利/失败情况)
+// - 对所有在房间内的玩家统计 games++
+// - 如果是胜利: wins++ 并更新 bestTime 当本次时间更快
+async function updateRoomStats(room, { winner = false, time = null } = {}) {
+    try {
+        const users = await readUsers();
+        const mode = room?.settings?.mode;
+        if (!users || !mode) return;
+
+        for (const [sid, info] of room.playerInfo.entries()) {
+            const username = info.username;
+            if (!username) continue;
+            const u = users[username];
+            if (!u) continue;
+
+            // Ensure stats structure exists
+            if (!u.stats) u.stats = {};
+            if (!u.stats[mode]) u.stats[mode] = { games: 0, wins: 0, bestTime: null };
+
+            // Always increment games count for a finished round
+            u.stats[mode].games = (u.stats[mode].games || 0) + 1;
+
+            if (winner) {
+                u.stats[mode].wins = (u.stats[mode].wins || 0) + 1;
+                if (typeof time === 'number' && Number.isFinite(time)) {
+                    const curBest = u.stats[mode].bestTime;
+                    // treat null/undefined/Infinity as not set
+                    if (!Number.isFinite(curBest) || curBest === null) {
+                        u.stats[mode].bestTime = time;
+                    } else if (time < curBest) {
+                        u.stats[mode].bestTime = time;
+                    }
+                }
+            }
+        }
+
+        await writeUsers(users);
+    } catch (e) {
+        console.error('Error updating stats:', e);
+    }
 }
 
 // ==================== 启动服务器 ====================

@@ -82,9 +82,9 @@ function showMessage(text, color = '#f66') {
 }
 
 async function handleRegister() {
-  const u = $('username')?.value.trim();
-  const n = $('nickname')?.value.trim() || u;
-  const p = $('password')?.value;
+  const u = $('regUsername')?.value.trim();
+  const n = $('regNickname')?.value.trim() || u;
+  const p = $('regPassword')?.value;
   if (!u || !n || !p) return showMessage('Username/Nickname/Password are required');
 
   const res = await fetch('/register', {
@@ -98,10 +98,9 @@ async function handleRegister() {
 }
 
 async function handleLogin() {
-  const u = $('username')?.value.trim();
-  const n = $('nickname')?.value.trim() || u;
-  const p = $('password')?.value;
-  if (!u || !n || !p) return showMessage('Username/Nickname/Password are required');
+  const u = $('loginUsername')?.value.trim();
+  const p = $('loginPassword')?.value;
+  if (!u || !p) return showMessage('Username and Password are required');
 
   const res = await fetch('/login', {
     method: 'POST',
@@ -123,37 +122,55 @@ async function handleLogin() {
 }
 
 // [新增] 加载统计数据的函数
-function loadStats() {
-    if (!username) return;
-    fetch(`/stats/${username}`) // 注意：这里使用了 URL 参数风格，请确认 server.js 是 /stats/:username 还是 POST /stats
-        .then(r => r.json())
-        .then(data => {
-            $('statGamesPlayed').textContent = data.games || 0; // 注意 server 返回字段可能是 games 不是 gamesPlayed
-            $('statGamesWon').textContent    = data.wins || 0;
-            
-            // 计算胜率
-            const games = data.games || 0;
-            const wins = data.wins || 0;
-            const rate = games > 0 ? Math.round((wins / games) * 100) : 0;
-            $('statWinRate').textContent = rate + '%';
-            
-            // 最佳时间
-            const best = data.bestTime;
-            $('statBestTime').textContent = (best === null || best === Infinity) ? '--:--' : (best/1000).toFixed(1) + 's';
-            
-            // 总时间 (假设后端没存 totalTime，这里暂时显示 0 或移除)
-            $('statTotalTime').textContent = '--'; 
-        })
-        .catch(console.error);
+// Load stats for a given mode (classic/simple/medium/expert)
+function loadStats(mode = 'classic') {
+  if (!username) return;
+  fetch(`/stats/${username}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data) data = {};
+      const modeData = data[mode] || { games: 0, wins: 0, bestTime: null };
+
+      $('statGamesPlayed').textContent = modeData.games || 0;
+      $('statGamesWon').textContent    = modeData.wins || 0;
+
+      // 计算胜率
+      const games = modeData.games || 0;
+      const wins = modeData.wins || 0;
+      const rate = games > 0 ? Math.round((wins / games) * 100) : 0;
+      $('statWinRate').textContent = rate + '%';
+
+      // 最佳时间
+      const best = modeData.bestTime;
+      $('statBestTime').textContent = (best === null || best === Infinity) ? '--:--' : (best/1000).toFixed(1) + 's';
+
+            // Total Play Time removed - no display or update
+    })
+    .catch(console.error);
 }
 
 function initMainPage() {
+  // 确保所有模态框都隐藏
   $('loginModal').style.display = 'none';
+  $('overModal').style.display = 'none';
+
   $('mainPage').style.display = 'block';
   $('welcomeUser').textContent = nickname;
 
   loadTheme();
-  loadStats(); // [新增] 加载统计数据
+  // Default stats mode is 'classic'
+  const statModeSelect = $('statsModeSelect');
+  if (statModeSelect) {
+    statModeSelect.value = localStorage.getItem('statsMode') || 'classic';
+    loadStats(statModeSelect.value);
+    statModeSelect.onchange = e => {
+      const m = e.target.value;
+      localStorage.setItem('statsMode', m);
+      loadStats(m);
+    };
+  } else {
+    loadStats('classic');
+  }
   connectSocket();
 
   // All buttons in the lobby
@@ -167,12 +184,12 @@ function initMainPage() {
   };
 
   
-$('joinLobbyBtn').onclick = () => {
-  const roomId = $('roomInput').value.trim();
-  if (!roomId) return alert('Enter Room ID');
-  // 修改处：事件名改为 joinLobby，且只传 ID（根据 server.js 的定义）
-  socket.emit('joinLobby', roomId); 
-};
+  $('joinLobbyBtn').onclick = () => {
+    const roomId = $('roomInput').value.trim();
+    if (!roomId) return alert('Enter Room ID');
+    // 修改处：事件名改为 joinLobby，且只传 ID（根据 server.js 的定义）
+    socket.emit('joinLobby', roomId); 
+  };
 
   $('copyRoomBtn').onclick = () => {
     if (currentRoom) {
@@ -201,6 +218,12 @@ $('joinLobbyBtn').onclick = () => {
 
   $('startGameBtn').onclick = () => {
     if (isHost) socket.emit('startGame', currentRoom);
+  };
+
+  $('deleteRoomBtn').onclick = () => {
+    if (isHost && confirm('Delete this room?')) {
+        socket.emit('deleteRoom', currentRoom);
+    }
   };
 
   // --- Volume slider real-time display ---
@@ -246,10 +269,43 @@ function connectSocket() {
   socket = io();
   socket.on('connect', () => socket.emit('auth', username));
 
+  socket.on('lobbyList', (lobbies) => {
+    const container = $('lobbyListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!lobbies || lobbies.length === 0) {
+        container.innerHTML = '<div class="lobby-item placeholder" style="cursor:default; color:#999; justify-content:center;">No rooms available</div>';
+        return;
+    }
+
+    lobbies.forEach(room => {
+        const div = document.createElement('div');
+        div.className = 'lobby-item';
+        div.innerHTML = `
+            <div class="info">
+                <span class="name">${room.name}</span>
+                <span class="details">Host: ${room.host} | Mode: ${room.mode} | Players: ${room.players}/4</span>
+            </div>
+            <span class="status ${room.status.toLowerCase()}">${room.status}</span>
+        `;
+        div.onclick = () => {
+            const input = $('roomInput');
+            if (input) input.value = room.id;
+            
+            // [Modified] If I am the host, click to re-join/manage the room
+            // Use hostUsername (login ID) for logic check, not the display name
+            if (room.hostUsername === username) {
+                socket.emit('joinLobby', room.id);
+            }
+        };
+        container.appendChild(div);
+    });
+  });
+
   socket.on('lobbyCreated', ({ roomId, roomName }) => {
     currentRoom = roomId;
     isHost = true;
-    currentRoom
     $('hostControls').style.display = 'block';
     $('roomInfo').style.display = 'block';
     $('currentRoomName').textContent = roomName || `${nickname}'s Room`;
@@ -272,51 +328,57 @@ function connectSocket() {
     alert('Error joining room: ' + msg);
   });
 
-  socket.on('playersUpdate', payload => {
-    // 兼容后端历史发法（array）或新发法（object）
-    const players = Array.isArray(payload) ? payload : (payload.players || []);
-    const hostUsername = payload.hostUsername || null;
+  socket.on('roomDeleted', () => {
+    alert('Room deleted by host');
+    currentRoom = null;
+    isHost = false;
+    currentRoomHost = null;
+    $('gamePage').style.display = 'none';
+    $('mainPage').style.display = 'block';
+    $('hostControls').style.display = 'none';
+    $('roomInfo').style.display = 'none';
+    updateMainPageButtons();
+  });
 
-    // 按 username 去重（保留最后一次出现的 info）
+  socket.on('playersUpdate', payload => {
+    // payload is array of { username, name, isHost }
+    const players = Array.isArray(payload) ? payload : (payload.players || []);
+    
+    // 按 username 去重
     const unique = Array.from(new Map(players.map(p => [p.username, p])).values());
 
-    // 渲染大厅/游戏玩家列表（示例选择元素 id：playersList / gamePlayersList）
-    const lobbyList = document.getElementById('playersList');
-    if (lobbyList) {
-      lobbyList.innerHTML = '';
-      unique.forEach(p => {
-        const li = document.createElement('li');
-        let label = `${p.name}`; // 只显示昵称
-        // 本玩家添加 (You)
-        if (p.username === username) label += ' (You)';
-        // 房主标注
-        if (p.username === hostUsername) label += (p.username === username ? ' (Room Owner)' : ' (Room Owner)');
-        li.textContent = label;
-        // 给自己加一个样式
-        if (p.username === username) li.classList.add('me');
-        if (p.username === hostUsername) li.classList.add('host');
-        lobbyList.appendChild(li);
-      });
-    }
+    // 渲染大厅/游戏玩家列表
+    const renderList = (elementId) => {
+        const list = document.getElementById(elementId);
+        if (!list) return;
+        list.innerHTML = '';
+        unique.forEach(p => {
+            const li = document.createElement('li');
+            let label = `${p.name}`;
+            if (p.username === username) label += ' (You)';
+            if (p.isHost) label += ' (Host)';
+            li.textContent = label;
+            if (p.username === username) li.classList.add('me');
+            if (p.isHost) li.classList.add('host');
+            list.appendChild(li);
+        });
+    };
 
-    // 游戏面板玩家列表（同上）
-    const gameList = document.getElementById('gamePlayersList');
-    if (gameList) {
-      gameList.innerHTML = '';
-      unique.forEach(p => {
-        const li = document.createElement('li');
-        let label = `${p.name}`;
-        if (p.username === username) label += ' (You)';
-        if (p.username === hostUsername) label += (p.username === username ? ' (Room Owner)' : ' (Room Owner)');
-        li.textContent = label;
-        if (p.username === username) li.classList.add('me');
-        if (p.username === hostUsername) li.classList.add('host');
-        gameList.appendChild(li);
-      });
-    }
+    renderList('playersList');
+    renderList('gamePlayersList');
 
-    // 如果需要记录当前房主在前端，用一个全局变量（便于 Leave Room 按钮显示 Close Room）
-    currentRoomHost = hostUsername; // （在文件顶部声明 var currentRoomHost = null;）
+    // 更新当前房主记录
+    const host = unique.find(p => p.isHost);
+    currentRoomHost = host ? host.username : null;
+
+    // [New] Update Host Controls Visibility based on real-time data
+    if (currentRoomHost === username) {
+        isHost = true;
+        if ($('hostControls')) $('hostControls').style.display = 'block';
+    } else {
+        isHost = false;
+        if ($('hostControls')) $('hostControls').style.display = 'none';
+    }
   });
 
   socket.on('modeSet', mode => {
@@ -338,7 +400,8 @@ function connectSocket() {
       gameOver: false,       // 确保重置
       animating: false,      // 确保重置
       cheatLevel: 0,         // [修改] 开始新游戏时强制关闭作弊
-      timerInterval: null    // 先占位
+      timerInterval: null,    // 先占位
+      creationAnim: { active: true, radius: 0, max: Math.max(cfg.w, cfg.h) * 1.5 } // [New] Animation state
     };
 
     // 清除旧定时器并开启新的
@@ -355,7 +418,26 @@ function connectSocket() {
     // [重要] 这里必须调用，确保非房主加入时能跳转页面并初始化 Canvas
     showGamePage(); 
     initCanvas(); // 确保 Canvas 尺寸被重新计算
-    drawBoard();
+    
+    // Start creation animation
+    const animStart = Date.now();
+    const animDuration = 800; // 0.8 second
+    const animLoop = () => {
+        if (!gameState.creationAnim.active || gameState.gameOver) return;
+        const now = Date.now();
+        const progress = Math.min(1, (now - animStart) / animDuration);
+        gameState.creationAnim.radius = progress * gameState.creationAnim.max;
+        drawBoard();
+        if (progress < 1) requestAnimationFrame(animLoop);
+        else {
+            gameState.creationAnim.active = false;
+            drawBoard(); // Final draw
+        }
+    };
+    requestAnimationFrame(animLoop);
+    
+    // [Fix] 确保游戏开始时关闭结算弹窗
+    $('overModal').style.display = 'none';
 
     // 更新信息栏
     $('gameRoomName').textContent = $('currentRoomName').textContent || "Room";
@@ -415,7 +497,8 @@ function connectSocket() {
     drawBoard(); // 重绘一次以去除作弊透视效果
     
     clearInterval(gameState.timerInterval);
-    loadStats(); // [新增] 游戏结束时刷新统计数据 
+    const modeSel = $('statsModeSelect');
+    loadStats(modeSel ? modeSel.value : 'classic'); // [新增] 游戏结束时刷新统计数据 
 
     if (data.winner) {
         fireworksAnim(3000);
@@ -451,26 +534,6 @@ function connectSocket() {
   });
   socket.on('joinError', (msg) => {
     alert(msg); // 如'Room not found'
-  });
-
-  // server announces room closed
-  socket.on('roomClosed', payload => {
-    const msg = (payload && payload.message) ? payload.message : 'Room Owner Close the Game';
-    const modal = $('roomClosedModal');
-    if (modal) {
-      $('roomClosedMsg').textContent = msg;
-      modal.style.display = 'block';
-      $('backToLobbyBtn').onclick = () => {
-        modal.style.display = 'none';
-        // go back to main page: clear local currentRoom and show main page
-        currentRoom = null;
-        isHost = false;
-        currentRoomHost = null;
-        $('gamePage').style.display = 'none';
-        $('mainPage').style.display = 'block';
-        updateMainPageButtons();
-      };
-    }
   });
 
 }
@@ -535,6 +598,16 @@ function bindCanvasEvents(canvas) {
 
     const currentVal = gameState.flagged[y][x];
     const nextVal = (currentVal + 1) % 3; // 0->1->2->0 循环
+
+    // [Fix] 检查剩余地雷数，如果已归零且尝试插旗(nextVal===1)，则阻止
+    if (nextVal === 1) {
+        const currentFlags = countFlags();
+        if (currentFlags >= gameState.mines) {
+            // 可选：提示用户
+            // alert('No mines left to flag!');
+            return;
+        }
+    }
 
     // 可以在这里加个简单的音效触发(如果未来需要)
     socket.emit('toggleFlag', { roomId: currentRoom, r: y, c: x, state: nextVal });
@@ -656,8 +729,7 @@ function endGame(won) {
   $('overTitle').textContent   = won ? 'Victory!' : 'Game Over!';
   $('overMessage').textContent = won ? `Time: ${$('gameTimer').textContent}` : 'You hit a mine';
 
-  $('restartOverBtn').onclick = () => location.reload();
-  $('backToLobbyBtn').onclick = () => location.reload();
+  $('overBackToLobbyBtn').onclick = () => location.reload();
 }
 
 function drawBoard() {
@@ -677,6 +749,12 @@ function drawBoard() {
 
   for (let y = 0; y < gameState.height; y++) {
     for (let x = 0; x < gameState.width; x++) {
+      // [New] Animation check
+      if (gameState.creationAnim && gameState.creationAnim.active) {
+          const dist = Math.sqrt(x*x + y*y); // Distance from top-left
+          if (dist > gameState.creationAnim.radius) continue; // Skip drawing
+      }
+
       const v = gameState.board[y][x];
       const r = gameState.revealed[y][x];
       const f = gameState.flagged[y][x];
@@ -689,31 +767,39 @@ function drawBoard() {
 
       // 绘制已翻开的雷
       if (r && v === -1) {
-        ctx.fillStyle = '#000000'; // 黑色主体
+        // Microsoft Style Mine: Black ball with shine and spikes
+        const cx = x * ts + ts / 2;
+        const cy = y * ts + ts / 2;
+        const radius = ts * 0.3;
+
+        // Spikes (Lines)
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = Math.max(1, ts * 0.05);
         ctx.beginPath();
-        // 绘制八角星形（齿轮状）
-        const centerX = x * ts + ts / 2;
-        const centerY = y * ts + ts / 2;
-        const outerRadius = ts / 2.5; // 外径
-        const innerRadius = ts / 4;   // 内径
-        for (let i = 0; i < 8; i++) {
-          const angle = (Math.PI * 2 / 8) * i;
-          const outerX = centerX + Math.cos(angle) * outerRadius;
-          const outerY = centerY + Math.sin(angle) * outerRadius;
-          const innerAngle = angle + (Math.PI / 8);
-          const innerX = centerX + Math.cos(innerAngle) * innerRadius;
-          const innerY = centerY + Math.sin(innerAngle) * innerRadius;
-          if (i === 0) ctx.moveTo(outerX, outerY);
-          else ctx.lineTo(outerX, outerY);
-          ctx.lineTo(innerX, innerY);
-        }
-        ctx.closePath();
+        // Horizontal
+        ctx.moveTo(cx - radius * 1.4, cy);
+        ctx.lineTo(cx + radius * 1.4, cy);
+        // Vertical
+        ctx.moveTo(cx, cy - radius * 1.4);
+        ctx.lineTo(cx, cy + radius * 1.4);
+        // Diagonals
+        const d = radius * 1.4 * 0.707;
+        ctx.moveTo(cx - d, cy - d);
+        ctx.lineTo(cx + d, cy + d);
+        ctx.moveTo(cx + d, cy - d);
+        ctx.lineTo(cx - d, cy + d);
+        ctx.stroke();
+
+        // Main Ball
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
         ctx.fill();
 
-        // 中心白色圆点
-        ctx.fillStyle = '#ffffff';
+        // Shine (White spot)
+        ctx.fillStyle = 'white';
         ctx.beginPath();
-        ctx.arc(centerX, centerY, ts / 8, 0, Math.PI * 2);
+        ctx.arc(cx - radius * 0.3, cy - radius * 0.3, radius * 0.25, 0, Math.PI * 2);
         ctx.fill();
       } 
       // 绘制数字
@@ -731,24 +817,42 @@ function drawBoard() {
       // 绘制旗帜
       else if (f === 1) { // red flag
         ctx.save();
-        // shorter, nicer pole
-        const poleWidth  = Math.max(2, Math.round(ts * 0.06));
-        const poleHeight = Math.round(ts * 0.44); // shorter than full height
-        const poleX = x * ts + Math.round(ts * 0.62); // slightly to the right
-        const poleY = y * ts + Math.round(ts * 0.18); // start a bit down from top
-
-        // pole
-        ctx.fillStyle = '#222';
-        ctx.fillRect(poleX, poleY, poleWidth, poleHeight);
-
-        // flag (triangle)
-        ctx.fillStyle = '#c00';
+        // 微软扫雷风格：红色三角形旗帜 + 黑色旗杆
+        const poleX = x * ts + ts * 0.55; // 旗杆位置
+        const poleY = y * ts + ts * 0.2;
+        const poleH = ts * 0.6;
+        
+        // 旗杆底座
+        ctx.fillStyle = '#000';
+        ctx.fillRect(x * ts + ts * 0.2, y * ts + ts * 0.75, ts * 0.6, ts * 0.1); // Base
+        ctx.fillRect(x * ts + ts * 0.3, y * ts + ts * 0.7, ts * 0.4, ts * 0.05); // Base top
+        
+        // 旗杆
         ctx.beginPath();
-        ctx.moveTo(poleX + poleWidth, poleY + Math.round(poleHeight * 0.12));
-        ctx.lineTo(poleX + Math.round(ts * 0.26), poleY + Math.round(poleHeight * 0.25));
-        ctx.lineTo(poleX + poleWidth, poleY + Math.round(poleHeight * 0.38));
+        ctx.moveTo(poleX, poleY);
+        ctx.lineTo(poleX, poleY + poleH);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000';
+        ctx.stroke();
+
+        // 旗面 (红色三角形，指向左边)
+        ctx.fillStyle = '#ff0000';
+        ctx.beginPath();
+        ctx.moveTo(poleX, poleY);
+        ctx.lineTo(poleX - ts * 0.35, poleY + ts * 0.15);
+        ctx.lineTo(poleX, poleY + ts * 0.3);
         ctx.closePath();
         ctx.fill();
+        
+        // 高光
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.moveTo(poleX, poleY);
+        ctx.lineTo(poleX - ts * 0.35, poleY + ts * 0.15);
+        ctx.lineTo(poleX, poleY + ts * 0.15);
+        ctx.closePath();
+        ctx.fill();
+
         ctx.restore();
       }
       else if (f === 2) { // 状态2：白色问号
@@ -766,31 +870,13 @@ function drawBoard() {
       if (!r && gameState.cheatLevel === 3) {
         ctx.globalAlpha = 0.35;
         if (v === -1) {
-          ctx.fillStyle = '#000000'; // 黑色主体
+          // Microsoft Style Mine (Ghost)
+          const cx = x * ts + ts / 2;
+          const cy = y * ts + ts / 2;
+          const radius = ts * 0.3;
+          ctx.fillStyle = 'black';
           ctx.beginPath();
-          // 绘制八角星形（齿轮状）
-          const centerX = x * ts + ts / 2;
-          const centerY = y * ts + ts / 2;
-          const outerRadius = ts / 2.5; // 外径
-          const innerRadius = ts / 4;   // 内径
-          for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 / 8) * i;
-            const outerX = centerX + Math.cos(angle) * outerRadius;
-            const outerY = centerY + Math.sin(angle) * outerRadius;
-            const innerAngle = angle + (Math.PI / 8);
-            const innerX = centerX + Math.cos(innerAngle) * innerRadius;
-            const innerY = centerY + Math.sin(innerAngle) * innerRadius;
-            if (i === 0) ctx.moveTo(outerX, outerY);
-            else ctx.lineTo(outerX, outerY);
-            ctx.lineTo(innerX, innerY);
-          }
-          ctx.closePath();
-          ctx.fill();
-
-          // 中心白色圆点
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(centerX, centerY, ts / 8, 0, Math.PI * 2);
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
           ctx.fill();
         } else if (v > 0) {
           // 修复错位：居中数字
@@ -901,50 +987,6 @@ function showGamePage() {
   $('mainPage').style.display = 'none';
   $('gamePage').style.display = 'block';
 
-  $('backToLobbyBtn').onclick = () => {
-    $('gamePage').style.display = 'none';
-    $('mainPage').style.display = 'block';
-    loadTheme(); // 重载主题
-  };
-
-  $('leaveGameBtn').onclick = () => {
-    if (isHost) {
-      const m = $('ownerCloseModal');
-      if (!m) {
-        // fallback: behave like normal leave
-        $('gamePage').style.display = 'none';
-        $('mainPage').style.display = 'block';
-        updateMainPageButtons();
-        return;
-      }
-      m.style.display = 'block';
-
-      $('continueBtn').onclick = () => { m.style.display = 'none'; };
-      $('cancelCloseBtn').onclick = () => { m.style.display = 'none'; };
-
-      $('closeRoomBtn').onclick = () => {
-        // request server to close the room
-        socket.emit('closeRoom', { roomId: currentRoom });
-        m.style.display = 'none';
-        // owner returns to main
-        currentRoom = null;
-        isHost = false;
-        currentRoomHost = null;
-        $('gamePage').style.display = 'none';
-        $('mainPage').style.display = 'block';
-        updateMainPageButtons();
-      };
-    } else {
-      // normal player leave
-      socket.emit('leaveRoom', { roomId: currentRoom });
-      currentRoom = null;
-      $('gamePage').style.display = 'none';
-      $('mainPage').style.display = 'block';
-      updateMainPageButtons();
-    }
-  };
-
-
   const canvas = $('boardCanvas');
   const ctx = canvas.getContext('2d');
 
@@ -974,33 +1016,7 @@ document.addEventListener('keydown', e => {
   }
 });
 
-$('restartOverBtn').onclick = () => {
-  $('overModal').style.display = 'none';
 
-  // 1. 强制重置状态
-  gameState.gameOver = false; 
-  gameState.animating = false; 
-  gameState.cheatLevel = 0; // [修改] 重启关闭作弊
-  
-  // 2. 数据清空 (本地先清空，等待服务器同步)
-  // 注意：这里需要深拷贝或新建数组，防止引用问题
-  if (gameState.height && gameState.width) {
-      gameState.revealed = Array.from({length: gameState.height}, () => Array(gameState.width).fill(false));
-      gameState.flagged = Array.from({length: gameState.height}, () => Array(gameState.width).fill(0));
-  }
-  
-  // 3. UI 重置
-  gameState.startTime = Date.now();
-  if (gameState.timerInterval) clearInterval(gameState.timerInterval);
-  gameState.timerInterval = setInterval(updateTimer, 1000);
-  $('gameTimer').textContent = "00:00";
-
-  drawBoard();
-  updateMinesLeft();
-
-  // 4. 发送给服务器
-  socket.emit('restartGame', currentRoom);
-};
 
 
 // 如果没有initCanvasEvents，添加一个函数在showGamePage中调用，并在restart中调用
@@ -1186,17 +1202,27 @@ function showOverModal(data) {
     $('overModal').style.display = 'flex';
     
     const newGameBtn = $('startNewGameBtn');
-    
-    // 只有胜利且是房主时，才显示 Start New Game (或者所有人都显示，看需求)
-    // 这里假设只有房主能开新局
-    if (data.winner && isHost) {
+    const backBtn = $('overBackToLobbyBtn');
+
+    // 只有房主显示 Start New Game
+    if (isHost) {
         newGameBtn.style.display = 'inline-block';
+        backBtn.style.display = 'inline-block'; // 房主也可以退出
+
         newGameBtn.onclick = () => {
              $('overModal').style.display = 'none';
              // 发送 startGame 会生成新雷
              socket.emit('startGame', currentRoom); 
         };
     } else {
+        // 非房主只显示 Back to Lobby
         newGameBtn.style.display = 'none';
+        backBtn.style.display = 'inline-block';
     }
+    
+    // [Fix] Ensure listener is attached every time modal is shown
+    backBtn.onclick = () => {
+        $('overModal').style.display = 'none';
+        location.reload();
+    };
 }
