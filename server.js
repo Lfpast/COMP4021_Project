@@ -18,7 +18,9 @@ const MODES = {
     simple: { w: 9, h: 9, m: 10 },
     classic: { w: 8, h: 8, m: 10 },
     medium: { w: 16, h: 16, m: 40 },
-    expert: { w: 30, h: 16, m: 99 }
+    expert: { w: 30, h: 16, m: 99 },
+    // custom: placeholder - real values come from room.settings.customParams
+    custom: { w: 8, h: 8, m: 10 }
 };
 
 
@@ -84,6 +86,16 @@ app.post('/register', async (req, res) => {
         password: hash,
         // Use null for bestTime to remain JSON safe and easy to check
         stats: Object.fromEntries(Object.keys(MODES).map(mode => [mode, { games: 0, wins: 0, bestTime: null }]))
+        ,
+        // default UI settings for the user
+        settings: {
+            volume: 70,
+            showTimer: true,
+            enableAnimations: true,
+            autoRevealBlank: true,
+            // preference for which mode to display by default (stats panel)
+            statsMode: 'classic'
+        }
     };
     
     await writeUsers(users);
@@ -121,6 +133,43 @@ app.get('/stats/:username', async (req, res) => {
     res.json(user?.stats || {});
 });
 
+// Get user settings (protected by token)
+app.get('/settings/:username', async (req, res) => {
+    const uname = req.params.username;
+    const token = req.headers['x-session-token'] || req.query.token;
+    if (!token || !SESSIONS.has(token) || SESSIONS.get(token) !== uname) return res.status(401).json({ success: false });
+    const users = await readUsers();
+    const user = users[uname];
+    res.json(user?.settings || {});
+});
+
+// Update user settings (write-through, require token)
+app.post('/settings', async (req, res) => {
+    const { username, token, settings } = req.body || {};
+    if (!username || !token || !settings || !SESSIONS.has(token) || SESSIONS.get(token) !== username) {
+        return res.status(401).json({ success: false });
+    }
+    try {
+        const users = await readUsers();
+        if (!users[username]) return res.status(404).json({ success: false });
+        // Basic validation and merge
+        const userSettings = users[username].settings || {};
+        users[username].settings = {
+            ...userSettings,
+            volume: Math.max(0, Math.min(100, Number(settings.volume || userSettings.volume || 70))),
+            showTimer: settings.showTimer === undefined ? (userSettings.showTimer ?? true) : !!settings.showTimer,
+            enableAnimations: settings.enableAnimations === undefined ? (userSettings.enableAnimations ?? true) : !!settings.enableAnimations,
+            autoRevealBlank: settings.autoRevealBlank === undefined ? (userSettings.autoRevealBlank ?? true) : !!settings.autoRevealBlank,
+            statsMode: settings.statsMode || (userSettings.statsMode || 'classic')
+        };
+        await writeUsers(users);
+        res.json({ success: true });
+    } catch (e) {
+        console.error('Error saving settings:', e);
+        res.status(500).json({ success: false });
+    }
+});
+
 // ==================== Socket.IO ====================
 
 // 内存中的房间状态 (用于实时游戏逻辑)
@@ -138,7 +187,9 @@ function getLobbyList() {
         host: r.playerInfo.get(r.hostId)?.name || 'Unknown',
         hostUsername: r.playerInfo.get(r.hostId)?.username, // [Fix] Send username for logic checks
         players: r.players.size,
-        mode: r.settings.mode,
+        mode: (r.settings.mode === 'custom' && r.settings.customParams)
+                ? `custom (${r.settings.customParams.w}x${r.settings.customParams.h}, ${r.settings.customParams.m} mines)`
+                : r.settings.mode,
         status: (r.state && !r.state.gameOver) ? 'Playing' : 'Waiting'
     }));
 }
@@ -172,7 +223,7 @@ io.on('connection', (socket) => {
             hostId: socket.id,
             players: new Set([socket.id]),
             playerInfo: new Map([[socket.id, { username, name: nickname }]]), // Store full info
-            settings: { mode: 'classic' }
+            settings: { mode: 'classic', customParams: null }
         };
         rooms.set(roomId, roomData);
 
@@ -183,7 +234,7 @@ io.on('connection', (socket) => {
             name: roomName,
             host: username,
             players: [username], // Keep simple list for persistence or update if needed
-            settings: { mode: 'classic' },
+            settings: { mode: 'classic', customParams: null },
             status: 'waiting'
         };
         await writeLobbies(lobbies);
@@ -246,7 +297,12 @@ io.on('connection', (socket) => {
             isHost: sid === room.hostId
         })));
         socket.emit('joinedLobby', { roomId: upperId, roomName: room.roomName });
-        socket.emit('modeSet', room.settings.mode);
+        socket.emit('modeSet', { mode: room.settings.mode, customParams: room.settings.customParams || null });
+
+        // If there are active signals in this room, send a snapshot to the joining client
+        if (room.state && room.state.signals && room.state.signals.length) {
+            socket.emit('signalsSnapshot', room.state.signals);
+        }
 
         // [Modified] Only send game state if the game is actively playing.
         // If the game is over, new joiners should wait in the lobby for the next game.
@@ -272,18 +328,40 @@ io.on('connection', (socket) => {
             // 更新持久化存储
             const lobbies = await readLobbies();
             if (lobbies[roomId]) {
-                lobbies[roomId].settings.mode = mode;
+                // Keep previous customParams if present
+                if (mode === 'custom') {
+                    lobbies[roomId].settings = { mode: 'custom', customParams: room.settings.customParams || null };
+                } else {
+                    lobbies[roomId].settings = { mode };
+                }
                 await writeLobbies(lobbies);
             }
 
-            io.to(roomId).emit('modeSet', mode);
+            io.to(roomId).emit('modeSet', { mode, customParams: room.settings.customParams || null });
         }
     });
 
     socket.on('startGame', (roomId) => {
         const room = rooms.get(roomId);
         if (room && room.hostId === socket.id) {
-            const { w, h, m } = MODES[room.settings.mode];
+            let w, h, m;
+            if (room.settings.mode === 'custom' && room.settings.customParams) {
+                w = Number(room.settings.customParams.w);
+                h = Number(room.settings.customParams.h);
+                m = Number(room.settings.customParams.m);
+            } else {
+                ({ w, h, m } = MODES[room.settings.mode]);
+            }
+            // Validate values
+            if (!w || !h || !m || w < 1 || h < 1 || m < 1 || m > w * h - 1) {
+                // If custom mode but no valid params, notify host and do not start
+                if (room.settings.mode === 'custom' && (!room.settings.customParams || !room.settings.customParams.w)) {
+                    socket.emit('startError', 'Invalid custom parameters. Please set width/height/mines before starting.');
+                    return;
+                }
+                // Otherwise fallback to classic
+                ({ w, h, m } = MODES.classic);
+            }
             const board = generateBoard(w, h, m);
             const revealed = Array(h).fill().map(() => Array(w).fill(false));
             const flagged = Array(h).fill().map(() => Array(w).fill(0));
@@ -304,7 +382,9 @@ io.on('connection', (socket) => {
                 flagged,
                 roomId,
                 mode: room.settings.mode,
-                startTime: room.state.startTime
+                startTime: room.state.startTime,
+                w, h, m
+                , signals: room.state.signals || []
             });
             broadcastLobbyList();
         }
@@ -324,6 +404,8 @@ io.on('connection', (socket) => {
             const w = room.state.board[0].length;
             room.state.revealed = Array(h).fill().map(() => Array(w).fill(false));
             room.state.flagged = Array(h).fill().map(() => Array(w).fill(0));
+            // Clear any signals on restart
+            room.state.signals = [];
             room.state.startTime = Date.now();
 
             // 通知所有客户端游戏已重置
@@ -393,7 +475,15 @@ io.on('connection', (socket) => {
         //    - 更新 room.state.revealed
         //    - 广播 'boardUpdate'
 
-        if (board[r][c] === 0) {
+        // Read user autoReveal preference to decide whether to flood fill
+        let userAutoReveal = true;
+        try {
+            const users = await readUsers();
+            const user = users[username];
+            if (user && user.settings && typeof user.settings.autoRevealBlank === 'boolean') userAutoReveal = !!user.settings.autoRevealBlank;
+        } catch (e) { /* ignore, default true */ }
+
+        if (board[r][c] === 0 && userAutoReveal) {
             const stack = [[c, r]];
             while (stack.length) {
                 const [x, y] = stack.pop();
@@ -472,15 +562,161 @@ io.on('connection', (socket) => {
         io.to(roomId).emit('minesLeftUpdate', room.state.mines - flags);
     });
 
+    // 1.5-click / chord: reveal surrounding tiles if flagged count equals the number displayed
+    // 前端调用: socket.emit('chordTile', { roomId, r, c })
+    socket.on('chordTile', async ({ roomId, r, c }) => {
+        const room = rooms.get(roomId);
+        if (!room || !room.state || room.state.gameOver) return;
+
+        const board = room.state.board;
+        const revealed = room.state.revealed;
+        const flagged = room.state.flagged;
+
+        if (!revealed[r][c]) return; // only on already revealed tiles
+        const val = board[r][c];
+        if (val <= 0) return; // only numbers > 0 can be chording targets
+
+        // Count adjacent flags
+        let flagCount = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const ny = r + dy, nx = c + dx;
+                if (ny >= 0 && ny < board.length && nx >= 0 && nx < board[0].length) {
+                    if (flagged[ny][nx] === 1) flagCount++;
+                }
+            }
+        }
+
+        if (flagCount !== val) {
+            // If mismatch, we don't perform chord - send back a small hint to requester
+            try { socket.emit('chordFail', { r, c, reason: 'flagMismatch' }); } catch (e) {}
+            return;
+        }
+
+        // Perform reveal for all adjacent unopened, unflagged tiles
+        let userAutoReveal = true;
+        try {
+            const users = await readUsers();
+            const u = users[username] || {};
+            if (u && u.settings && typeof u.settings.autoRevealBlank === 'boolean') userAutoReveal = !!u.settings.autoRevealBlank;
+        } catch (e) { /* ignore default true */ }
+
+        const toRevealStack = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const ny = r + dy, nx = c + dx;
+                if (ny >= 0 && ny < board.length && nx >= 0 && nx < board[0].length) {
+                    if (flagged[ny][nx] === 1 || revealed[ny][nx]) continue;
+                    toRevealStack.push([nx, ny]);
+                }
+            }
+        }
+
+        let exploded = false;
+        // We'll iterate, and if any mine is revealed, handle game over
+        const processStack = [];
+        for (const [sx, sy] of toRevealStack) processStack.push([sx, sy]);
+
+        while (processStack.length) {
+            const [x, y] = processStack.pop();
+            if (x < 0 || x >= board[0].length || y < 0 || y >= board.length) continue;
+            if (revealed[y][x] || flagged[y][x] === 1) continue;
+            if (board[y][x] === -1) {
+                // A mine was accidentally revealed = game over
+                revealed[y][x] = true;
+                exploded = true;
+                break;
+            }
+            // Reveal tile
+            revealed[y][x] = true;
+            // If it's a zero and autoReveal allowed, flood outwards
+            if (board[y][x] === 0 && userAutoReveal) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const ny = y + dy, nx = x + dx;
+                        if (ny >= 0 && ny < board.length && nx >= 0 && nx < board[0].length) {
+                            if (!revealed[ny][nx] && flagged[ny][nx] !== 1) {
+                                processStack.push([nx, ny]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (exploded) {
+            room.state.gameOver = true;
+            room.state.winner = false;
+            // reveal all mines for display
+            for (let y = 0; y < board.length; y++) {
+                for (let x = 0; x < board[0].length; x++) {
+                    if (board[y][x] === -1) revealed[y][x] = true;
+                }
+            }
+            await updateRoomStats(room, { winner: false });
+            io.to(roomId).emit('gameOver', { winner: false, board: room.state.board, revealed: room.state.revealed });
+            broadcastLobbyList();
+            return;
+        }
+
+        // After reveals, check victory condition
+        let win = true;
+        for (let y = 0; y < board.length; y++) {
+            for (let x = 0; x < board[0].length; x++) {
+                if (board[y][x] !== -1 && !revealed[y][x]) { win = false; break; }
+            }
+            if (!win) break;
+        }
+
+        if (win) {
+            room.state.gameOver = true;
+            room.state.winner = true;
+            const time = Date.now() - room.state.startTime;
+            await updateRoomStats(room, { winner: true, time });
+            io.to(roomId).emit('gameOver', { winner: true, time });
+            broadcastLobbyList();
+            return;
+        }
+
+        // Otherwise broadcast the updated revealed/flagged map
+        io.to(roomId).emit('boardUpdate', { revealed: room.state.revealed, flagged: room.state.flagged });
+    });
+
     // 3. 鼠标拖拽信号系统 (Gameplay - Signals)
     // 前端调用: socket.emit('sendSignal', { roomId, type, r, c })
-    // type: 'help' (左), 'onMyWay' (右), 'avoid' (上), 'question' (下)
+    // type: 'help' (left), 'onMyWay' (right), 'avoid' (up), 'question' (down)
     socket.on('sendSignal', ({ roomId, type, r, c }) => {
-        // 直接广播给房间内其他人，用于显示临时特效
-        socket.to(roomId).emit('signalReceived', { 
-            type, r, c, 
-            fromUser: socket.username 
-        });
+        const room = rooms.get(roomId);
+        if (!room || !room.state) return;
+        const allowed = new Set(['help', 'onMyWay', 'avoid', 'question']);
+        if (!allowed.has(type)) return;
+        const board = room.state.board;
+        if (!board || r < 0 || r >= board.length || c < 0 || c >= board[0].length) return;
+
+        // Create a signal entry
+        const id = Math.random().toString(36).substring(2, 9).toUpperCase();
+        const ttl = 3000; // ms
+        const signal = { id, type, r, c, fromUser: username, expiresAt: Date.now() + ttl };
+
+        // Ensure room state has signals array
+        if (!room.state.signals) room.state.signals = [];
+        room.state.signals.push(signal);
+
+        // Broadcast to entire room (including sender)
+        io.to(roomId).emit('signalReceived', signal);
+
+        // Schedule removal after TTL
+        setTimeout(() => {
+            try {
+                // Remove expired signal
+                if (!room.state || !room.state.signals) return;
+                room.state.signals = room.state.signals.filter(s => s.id !== id);
+                io.to(roomId).emit('signalExpired', { id });
+            } catch (e) { /* ignore */ }
+        }, ttl);
     });
 
     // 4. 自定义难度设置 (Lobby - Custom Mode)
@@ -488,18 +724,33 @@ io.on('connection', (socket) => {
     socket.on('setCustomMode', ({ roomId, w, h, m }) => {
         const room = rooms.get(roomId);
         if (room && room.hostId === socket.id) {
-            // TODO: 校验参数范围 (例如 w: 5-50, h: 5-30)
-            // TODO: 更新 room.settings.mode = 'custom'
-            // TODO: 更新 room.settings.customParams = { w, h, m }
-            // TODO: 广播模式变更
+                        // Validate ranges
+                        const minW = 5, maxW = 50, minH = 5, maxH = 30;
+                        w = Number(w); h = Number(h); m = Number(m);
+                        if (!Number.isInteger(w) || !Number.isInteger(h) || !Number.isInteger(m)) return;
+                        if (w < minW || w > maxW || h < minH || h > maxH) return socket.emit('modeSetError', 'Width/Height out of allowed range');
+                        if (m < 1 || m > (w * h - 1)) return socket.emit('modeSetError', 'Mine count out of range');
+
+                        room.settings.mode = 'custom';
+                        room.settings.customParams = { w, h, m };
+
+                        // Tell the requester explicitly it's accepted and broadcast to the room
+                        socket.emit('modeSet', { mode: 'custom', customParams: room.settings.customParams });
+
+                        // Update persistence
+                        (async () => {
+                            const lobbies = await readLobbies();
+                            if (lobbies[roomId]) {
+                                lobbies[roomId].settings = { mode: 'custom', customParams: { w, h, m } };
+                                await writeLobbies(lobbies);
+                            }
+                        })();
+
+                        io.to(roomId).emit('modeSet', { mode: 'custom', customParams: room.settings.customParams });
         }
     });
 
-    // 5. 作弊功能开关 (Cheating)
-    // 前端调用: socket.emit('toggleCheat', { roomId, enable })
-    socket.on('toggleCheat', ({ roomId, enable }) => {
-        // TODO: 记录房间作弊状态，可能会影响最终统计 (如不计入排行榜)
-    });
+    // 5. Cheating feature removed for redesign: toggleCheat handler removed
 
     // 6. 删除房间 (Host Only)
     socket.on('deleteRoom', async (roomId) => {

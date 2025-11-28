@@ -1,0 +1,90 @@
+<!-- Side Menu Bar - partial loaded into DOM -->
+<div id="sideMenu" class="side-menu">
+  <div class="side-menu-header">
+    <h3>Settings</h3>
+    <button id="closeSideMenu" class="icon-btn">✕</button>
+  </div>
+  <div class="side-menu-body">
+    <section class="side-section">
+      <h4>Audio</h4>
+      <label>Volume: <span id="sideVolumeVal">70%</span></label>
+      <input type="range" id="sideVolume" min="0" max="100" value="70">
+    </section>
+
+    <section class="side-section">
+      <h4>Display</h4>
+      <div class="side-row"><span>Show Timer</span><input type="checkbox" id="sideShowTimer"></div>
+      <div class="side-row"><span>End-game Animations</span><input type="checkbox" id="sideEnableAnimations"></div>
+      <div class="side-row"><span>Auto-reveal blank tiles</span><input type="checkbox" id="sideAutoReveal"></div>
+    </section>
+
+    <section class="side-section">
+      <h4>Gameplay Introduction</h4>
+      <div id="sideIntroSummary" class="intro-text">
+        <p><strong>Quick tip:</strong> Left-click to reveal tiles, right-click to flag mines. Numbers show adjacent mine counts; use logic, not guesswork.</p>
+        <button id="sideIntroToggle" class="big-btn" style="margin-top:8px; padding:8px; font-size:14px;">Read More</button>
+      </div>
+      <div id="sideIntro" class="intro-text" style="display:none; margin-top:8px;">
+        <p><strong>Quick Start</strong> — Your goal is to reveal all safe tiles without detonating any mines. Click tiles to reveal them, and right-click to flag tiles you believe contain a mine.</p>
+
+        <h5>Rules & Controls</h5>
+        <ul>
+          <li><strong>Reveal</strong>: Left-click a tile to reveal what's underneath. If it's a mine you lose.</li>
+          <li><strong>Flag</strong>: Right-click to mark a tile as a suspected mine; right-click again to remove the flag.</li>
+          <li><strong>Numbers</strong>: Revealed numbers show the count of mines adjacent to that tile (including diagonals).</li>
+          <li><strong>Auto-reveal (chording)</strong>: If a revealed number has the same number of flags as its digit, clicking it will also reveal its unopened neighbors (this is called chording).</li>
+          <li><strong>First click safety</strong>: In most variants, your first click is safe and opens at least one tile.</li>
+        </ul>
+
+        <h5>How to Read Numbers</h5>
+        <p>The number on a revealed tile tells you how many mines are in the 8 tiles around it. Use these numbers to logically deduce which nearby tiles are safe to open and which contain mines.</p>
+
+        <h5>Basic Strategy</h5>
+        <ul>
+          <li>Start at corners and open spaces — corners have fewer adjacent tiles so they're easier to deduce.</li>
+          <li>Flag confidently — flags reduce uncertainty. If a 1 sits next to exactly one unopened square, that square is a mine.</li>
+          <li>Avoid guessing when possible — deduce using multiple numbers or patterns.</li>
+        </ul>
+
+        <h5>Common Patterns & Advanced Tips</h5>
+        <ul>
+          <li><strong>1-2-1 pattern:</strong> A row like 1-2-1 often means the two outer tiles are mines, and middle is safe; use this to remove ambiguity.</li>
+          <li><strong>Edge reasoning:</strong> On the board edge, numbers apply to fewer tiles so the math is simpler.</li>
+          <li><strong>1.5-click:</strong> A common advanced technique is a fast chord—pressing both buttons (or double-click) to reveal surrounding tiles once you have flagged neighbors — use with care!</li>
+        </ul>
+
+        <h5>Teamplay Tips (for Multi-player)</h5>
+        <ul>
+          <li>Use signals and chat to coordinate: say when you flag or suspect a tile, so others can avoid accidental clicks.</li>
+          <li>When in doubt, share the reasoning: "This '3' is touching 3 unopened cells, two of which are already flagged — the third must be a mine."</li>
+        </ul>
+
+        <h5>Custom Mode Tips</h5>
+        <ul>
+          <li>Keep width/height manageable — our board scales with your viewport so large boards can still fit but may be tiny on small screens.</li>
+          <li>Keep "mines" <= width*height - 1 or the game can't start; we enforce that in the UI and server side.</li>
+          <li>When setting custom boards for tournaments, prefer known 'classic' dimensions for fairness.</li>
+        </ul>
+
+        <h5>Further Learning</h5>
+        <p>To dive deeper into Minesweeper strategy and advanced pattern recognition, check these resources:</p>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Minesweeper_(video_game)" target="_blank">Minesweeper — Wikipedia (overview & common patterns)</a></li>
+          <li><a href="https://support.xbox.com/en-US/help/games-apps/windows/games/minesweeper" target="_blank">Microsoft Minesweeper — Quick Help & Tips</a></li>
+          <li><a href="https://minesweeper.info/" target="_blank">Community guides & strategy patterns</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="side-section">
+      <h4>About</h4>
+      <div id="sideAbout">
+        <p>Multisweeper v0.1.0</p>
+        <p>Developed by COMP 4021Group 1</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Side menu toggle button -->
+<button id="sideMenuToggle" class="side-menu-toggle">☰</button>

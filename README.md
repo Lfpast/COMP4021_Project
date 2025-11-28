@@ -45,7 +45,7 @@ All tiles start unrevealed. Players collaborate to deduce mine locations from re
     - Up: "Don't do" (avoid this area for now, it's tricky).
     - Down: "Question mark" (confused about actions here).
   - These signals appear as temporary icons on the board for collaboration.
-- **Controls**: Mouse for clicks/drags; keyboard for cheats (see below). Game supports real-time interaction for up to multiple players simultaneously.
+  - **Controls**: Mouse for clicks/drags. Game supports real-time interaction for up to multiple players simultaneously.
 
 ### How to Win/Lose
 - **Win**: Reveal all non-mine tiles (empty and number). All players' names appear on the leaderboard. In edge cases where deduction is impossible, the game auto-resolves safely.
@@ -100,6 +100,5 @@ Cheat mode is toggled via the 'C' key (press to enable/disable). It's off by def
 Levels of cheating (escalating strength):
 1. **Trial-and-Error Chances (1-3)**: Clicking a mine doesn't end the game; it reveals it's a mine with fun animations (e.g., mine jumps away or explodes harmlessly).
 2. **Limited Vision Area**: A magnifying glass tool lets players peek under a small area of unrevealed tiles (shows numbers/empties/mines temporarily).
-3. **Full Mine Marking**: Auto-flags all mines, leading to instant win.
-
+3. **Full Mine Marking**: Auto-flags all mines.
 This makes the game completable much quicker when enabled, but it's optional and can be disabled anytime for fair play.

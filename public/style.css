@@ -105,7 +105,8 @@ body {
 
 .container {
   display: flex;
-  justify-content: space-between;
+  justify-content: center; /* Center the content horizontally */
+  align-items: center;     /* Center vertically inside container */
   max-width: 1200px;
   margin: 80px auto 40px;
   padding: 0 30px;
@@ -174,6 +175,12 @@ body {
 .btn-group button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Custom input invalid state */
+.custom-invalid {
+  border: 2px solid #e74c3c !important;
+  box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.08);
 }
 
 .modal {
@@ -319,10 +326,13 @@ th {
   overflow-y: auto; /* 允许滚动，防止大棋盘显示不全 */
 }
 
-.game-container {
+/* Ensure lobby container is vertically centered below header */
+#mainPage .container { min-height: calc(100vh - 120px); align-items: center; }
+
+ .game-container {
   display: flex;
   justify-content: center;
-  align-items: flex-start;
+  align-items: center;
   padding: 20px;
   gap: 30px;
   margin-top: 20px;
@@ -364,14 +374,7 @@ th {
   font-weight: bold;
 }
 
-#cheatBtn {
-  padding: 10px;
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
+#cheatBtn { display:none; }
 
 #overModal .modal-content {
   text-align: center;
@@ -619,3 +622,77 @@ th {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(52,152,219,0.5);
 }
+
+/* Side menu styles */
+.side-menu-toggle {
+  position: fixed;
+  right: 16px;
+  /* lower the button so it doesn't overlap the header/logout area */
+  top: 80px;
+  z-index: 2000;
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.2);
+}
+/* Hide the side menu toggle during login modal (inline style 'display:flex') as an extra fallback */
+#loginModal[style*="display: flex"] ~ #sideMenuToggle { display: none !important; }
+.side-menu {
+  position: fixed;
+  right: -360px;
+  top: 0;
+  height: 100vh;
+  width: 360px;
+  background: var(--card);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.2);
+  transition: right 0.28s ease;
+  z-index: 1999;
+  display: flex;
+  flex-direction: column;
+}
+.side-menu.open { right: 0; }
+.side-menu-header { display:flex; align-items:center; justify-content:space-between; padding:16px; border-bottom: 1px solid var(--border); }
+.side-menu-body { padding:16px; overflow-y:auto; }
+.side-section { margin-bottom: 18px; }
+.side-row { display:flex; align-items:center; justify-content:space-between; gap: 12px; margin: 8px 0; }
+.side-row span { flex: 1; }
+.side-row input { flex: 0; }
+.side-section h4 { margin: 0 0 8px 0; color:var(--accent); }
+.icon-btn { background:none; border:none; font-size:18px; cursor:pointer; }
+.intro-text { font-size:13px; color:#444; }
+.side-menu input[type=range] { width:100%; }
+.side-menu input[type=checkbox] { transform: scale(1.1); margin-right:6px; }
+.custom-invalid { box-shadow: 0 0 0 2px rgba(255,0,0,0.1) inset; border: 1px solid rgba(255,0,0,0.3); }
+/* Simple in-game toast for notifications */
+.game-toast {
+  position: fixed;
+  right: 24px;
+  top: 96px;
+  z-index: 99999;
+  background: rgba(0,0,0,0.8);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+  opacity: 0; transform: translateY(-6px); transition: opacity 0.2s, transform 0.2s;
+}
+.center-toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 99999;
+  background: rgba(255,255,255,0.98);
+  color: #333;
+  padding: 16px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+  opacity: 0; transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.center-toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.game-toast.show { opacity: 1; transform: translateY(0); }

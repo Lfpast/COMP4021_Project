@@ -1,22 +1,17 @@
 // front.js - Final, clean, English-only, zero null-safe version
-
+console.info('front.js loaded');
+// Helper shorthand for getElementById
 const $ = (id) => document.getElementById(id);
-
-let socket = null;
-let username = null;
-let nickname = null;
-let currentRoom = null;
-let isHost = false;
-
-let currentRoomHost = null; // [新增] 记录当前房主的 username
-
+// also expose on window for inline handlers or other scripts that expect window.$
+window.$ = $;
+// Client-side copy of MODE presets. Keep in sync with server.js (used for rendering/custom input validation)
 const MODES = {
   simple:  { w: 9,  h: 9,  m: 10 },
   classic: { w: 8,  h: 8,  m: 10 },
   medium:  { w: 16, h: 16, m: 40 },
-  expert:  { w: 30, h: 16, m: 99 }
+  expert:  { w: 30, h: 16, m: 99 },
+  custom:  { w: 8,  h: 8,  m: 10 }
 };
-
 let gameState = {
   board: null,
   revealed: null,
@@ -28,11 +23,18 @@ let gameState = {
   startTime: null,
   timerInterval: null,
   tileSize: 32,
-  cheatLevel: 0
+  // cheat removed - feature to be revisited later
+  signals: [], // list of current signals shown, each { type, r, c, fromUser, expiresAt }
+  chordEffectPositions: [],
+  chordPulse: null
 };
+// Mine assets and loading disabled
+// NOTE: We intentionally do not use image-based mines. All image assets under public/assets remain untouched on disk.
+// Try to load an SVG first (scales cleanly); fallback to PNG if not found
+// Image-based mine rendering intentionally disabled; mines are drawn using vector or not drawn.
 
+// Ensure we initialize by checking any stored session and either showing the main page or login
 document.addEventListener('DOMContentLoaded', () => {
-  // --- Check login session ------------------------------------------------
   const storedUser = localStorage.getItem('username');
   const storedToken = localStorage.getItem('token');
   const storedNick  = localStorage.getItem('nickname');
@@ -57,19 +59,52 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     showLoginModal();
   }
+  // Ensure login/register buttons are bound even if showLoginModal didn't run or elements were re-rendered
+  setTimeout(ensureLoginBindings, 50);
+  startLoginBindingWatchdog();
+  // Image-based mine rendering disabled: drawBoard no longer draws mine icons.
 });
+
+function setSideToggleVisible(v) {
+  const t = $('sideMenuToggle');
+  if (!t) return;
+  t.style.display = v ? 'block' : 'none';
+}
 
 
 function showLoginModal() {
   localStorage.clear();
   const modal = $('loginModal');
   if (modal) modal.style.display = 'flex';
+  // Hide side menu toggle during login
+  setSideToggleVisible(false);
 
   // Safe binding – only if elements exist
   const regBtn = $('registerBtn');
   const logBtn = $('loginBtn');
   if (regBtn) regBtn.onclick = handleRegister;
   if (logBtn) logBtn.onclick = handleLogin;
+}
+
+// Fallback: ensure login/register events are bound during initial load
+function ensureLoginBindings() {
+  const regBtn = $('registerBtn');
+  const logBtn = $('loginBtn');
+  if (regBtn && !regBtn._bound) { regBtn._bound = true; regBtn.addEventListener('click', handleRegister); console.info('ensureLoginBindings: registerBtn bound'); }
+  if (logBtn && !logBtn._bound) { logBtn._bound = true; logBtn.addEventListener('click', handleLogin); console.info('ensureLoginBindings: loginBtn bound'); }
+}
+
+// A more robust binding loop: keep attempting to bind the login/register buttons until they exist
+function startLoginBindingWatchdog() {
+  let attempts = 0;
+  const t = setInterval(() => {
+    attempts++;
+    ensureLoginBindings();
+    const regBtn = $('registerBtn');
+    const logBtn = $('loginBtn');
+    if ((regBtn && regBtn._bound) && (logBtn && logBtn._bound)) clearInterval(t);
+    if (attempts > 50) clearInterval(t); // stop trying after ~2.5 seconds
+  }, 50);
 }
 
 function showMessage(text, color = '#f66') {
@@ -82,34 +117,45 @@ function showMessage(text, color = '#f66') {
 }
 
 async function handleRegister() {
+  console.info('handleRegister(): called');
+  showToast('Registering...', 1200);
   const u = $('regUsername')?.value.trim();
   const n = $('regNickname')?.value.trim() || u;
   const p = $('regPassword')?.value;
   if (!u || !n || !p) return showMessage('Username/Nickname/Password are required');
 
-  const res = await fetch('/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p, name: n })
-  });
-  const data = await res.json();
-  showMessage(data.success ? 'Registered! Please log in' : data.msg || 'Failed',
-              data.success ? '#6f6' : '#f66');
+  try {
+    const res = await fetch('/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p, name: n })
+    });
+    const data = await res.json();
+    console.info('handleRegister: response', data);
+    showMessage(data.success ? 'Registered! Please log in' : data.msg || 'Failed', data.success ? '#6f6' : '#f66');
+  } catch (e) {
+    showCenterToast('Network error: Failed to register', 2000);
+    console.error('Register error', e);
+  }
 }
 
 async function handleLogin() {
+  console.info('handleLogin(): called');
+  showToast('Logging in...', 1000);
   const u = $('loginUsername')?.value.trim();
   const p = $('loginPassword')?.value;
   if (!u || !p) return showMessage('Username and Password are required');
 
-  const res = await fetch('/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
-  const data = await res.json();
+  try {
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const data = await res.json();
+    console.info('handleLogin: response', data);
 
-  if (data.success) {
+    if (data.success) {
     username = u;
     nickname = data.name || u;
     localStorage.setItem('username', u);
@@ -118,6 +164,10 @@ async function handleLogin() {
     initMainPage();
   } else {
     showMessage(data.msg || 'Login failed');
+  }
+  } catch (e) {
+    showCenterToast('Network error: Failed to login', 2000);
+    console.error('Login error', e);
   }
 }
 
@@ -156,6 +206,8 @@ function initMainPage() {
 
   $('mainPage').style.display = 'block';
   $('welcomeUser').textContent = nickname;
+  // Ensure the side menu toggle is visible on the main page
+  setSideToggleVisible(true);
 
   loadTheme();
   // Default stats mode is 'classic'
@@ -213,8 +265,93 @@ function initMainPage() {
   }
 
   $('modeSelect').onchange = e => {
-    if (isHost) socket.emit('setMode', { roomId: currentRoom, mode: e.target.value });
+    const mode = e.target.value;
+    const customParamsDiv = $('customParams');
+    if (mode === 'custom') {
+      if (customParamsDiv) customParamsDiv.style.display = 'block';
+      // If host and custom inputs have values, send them immediately
+      if (isHost && $('customW') && $('customH') && $('customM')) {
+        updateCustomParamsFromInputs();
+      }
+    } else {
+      if (customParamsDiv) customParamsDiv.style.display = 'none';
+    }
+    if (isHost) socket.emit('setMode', { roomId: currentRoom, mode });
   };
+
+  // Custom parameter inputs (host only)
+  const customW = $('customW');
+  const customH = $('customH');
+  const customM = $('customM');
+  const customHint = $('customHint');
+  // Keep a cached 'lastCustomSent' so we don't spam setCustomMode
+  let lastCustomSent = null;
+  function updateCustomParamsFromInputs() {
+    if (!isHost || !currentRoom) return;
+    const w = Number(customW.value || 8);
+    const h = Number(customH.value || 8);
+    let m = Number(customM.value || 10);
+    if (!Number.isInteger(w) || w < 5) return;
+    if (!Number.isInteger(h) || h < 5) return;
+    const maxM = Math.max(1, w * h - 1);
+    if (customM) customM.max = maxM;
+    if (m < 1) m = 1;
+    if (m > maxM) m = maxM;
+    customM.value = m;
+    const toSend = { roomId: currentRoom, w, h, m };
+    // avoid sending the same object repeatedly
+    const key = `${w}x${h}#${m}`;
+    if (lastCustomSent === key) return; // throttle
+    lastCustomSent = key;
+    socket.emit('setCustomMode', toSend);
+  }
+  if (customW) customW.onchange = updateCustomParamsFromInputs;
+  if (customH) customH.onchange = updateCustomParamsFromInputs;
+  if (customM) customM.onchange = updateCustomParamsFromInputs;
+
+  function validateCustomParams() {
+    const startBtn = $('startGameBtn');
+    if (!isHost || !currentRoom || !customW || !customH || !customM) return;
+    const w = Number(customW.value || 0), h = Number(customH.value || 0), m = Number(customM.value || 0);
+    // Determine client-side viewport-guided limits
+    const tileMin = 20; // px
+    const maxGridWByViewport = Math.floor((window.innerWidth * 0.65) / tileMin) || 50;
+    const maxGridHByViewport = Math.floor((window.innerHeight * 0.85) / tileMin) || 30;
+    const maxGridW = Math.min(50, Math.max(5, maxGridWByViewport));
+    const maxGridH = Math.min(30, Math.max(5, maxGridHByViewport));
+    const maxM = Math.max(1, w * h - 1);
+    const valid = Number.isInteger(w) && w >= 5 && w <= maxGridW && Number.isInteger(h) && h >= 5 && h <= maxGridH && Number.isInteger(m) && m >= 1 && m <= maxM;
+    if (startBtn) startBtn.disabled = !valid;
+    const newGameBtn = $('startNewGameBtn');
+    if (newGameBtn) newGameBtn.disabled = !valid;
+    // Update invalid styles
+    if (customW) customW.classList.toggle('custom-invalid', !(Number.isInteger(w) && w >= 5 && w <= maxGridW));
+    if (customH) customH.classList.toggle('custom-invalid', !(Number.isInteger(h) && h >= 5 && h <= maxGridH));
+    if (customM) customM.classList.toggle('custom-invalid', !(Number.isInteger(m) && m >= 1 && m <= maxM));
+    if (valid) {
+      // update hint text
+      if (customHint) customHint.textContent = `Mines max = ${maxM}`;
+    } else {
+      if (customHint) customHint.textContent = `Mines max = W × H - 1. Max W=${maxGridW}, H=${maxGridH}`;
+    }
+    return valid;
+  }
+  // Expose for outer scope (socket handler) to validate and update start button state
+  window.validateCustomParams = validateCustomParams;
+  if (customW) customW.oninput = validateCustomParams;
+  if (customH) customH.oninput = validateCustomParams;
+  if (customM) customM.oninput = validateCustomParams;
+  // initialize max values based on viewport
+  (function setCustomInputMaxes() {
+    const tileMin = 20;
+    const maxGridWByViewport = Math.floor((window.innerWidth * 0.65) / tileMin) || 50;
+    const maxGridHByViewport = Math.floor((window.innerHeight * 0.85) / tileMin) || 30;
+    const maxGridW = Math.min(50, Math.max(5, maxGridWByViewport));
+    const maxGridH = Math.min(30, Math.max(5, maxGridHByViewport));
+    if (customW) { customW.max = maxGridW; customW.min = 5; }
+    if (customH) { customH.max = maxGridH; customH.min = 5; }
+    if (customM) { customM.min = 1; }
+  })();
 
   $('startGameBtn').onclick = () => {
     if (isHost) socket.emit('startGame', currentRoom);
@@ -226,24 +363,7 @@ function initMainPage() {
     }
   };
 
-  // --- Volume slider real-time display ---
-  const volumeSlider = $('volumeSlider');
-  const volumeValue  = $('volumeValue');
-
-  if (volumeSlider && volumeValue) {
-    volumeValue.textContent = volumeSlider.value + '%';
-
-    volumeSlider.addEventListener('input', () => {
-      volumeValue.textContent = volumeSlider.value + '%';
-      localStorage.setItem('volume', volumeSlider.value);
-    });
-
-    const saved = localStorage.getItem('volume');
-    if (saved) {
-      volumeSlider.value = saved;
-      volumeValue.textContent = saved + '%';
-    }
-  }
+  // Volume control moved to the side menu; use side menu controls instead.
   const themeSelect = $('themeSelect');
   if (themeSelect) {
     themeSelect.onchange = () => {
@@ -254,20 +374,129 @@ function initMainPage() {
   }
   loadTheme();
 
-  document.querySelectorAll('input[type=checkbox]').forEach(cb => {
-    const key = cb.id;
-    const saved = localStorage.getItem(key);
-    if (saved !== null) cb.checked = saved === 'true';
-    
-    cb.onchange = () => {
-      localStorage.setItem(key, cb.checked);
-    };
-  });
+  // NOTE: Checkbox settings moved to side-menu; specific controls are bound in connectSocket() after menu loads
 }
 
 function connectSocket() {
   socket = io();
   socket.on('connect', () => socket.emit('auth', username));
+
+  // Insert side menu logic after socket connects
+  // Delay binding to ensure DOM is loaded and the partial is inserted
+  setTimeout(() => {
+    const toggle = $('sideMenuToggle');
+    const sideMenu = $('sideMenu');
+    const closeBtn = $('closeSideMenu');
+    if (toggle && sideMenu) {
+      toggle.onclick = () => {
+        sideMenu.classList.add('open');
+        // Hide toggle while open, we'll rely on the close button
+        toggle.style.display = 'none';
+      };
+    }
+    if (closeBtn && sideMenu) closeBtn.onclick = () => {
+      sideMenu.classList.remove('open');
+      // Show the toggle again after closing
+      const toggle = $('sideMenuToggle');
+      if (toggle) toggle.style.display = 'block';
+    };
+    // Ensure toggle visible by default after binding
+    if (toggle) toggle.style.display = 'block';
+
+    const sideVolume = $('sideVolume');
+    const sideVolumeVal = $('sideVolumeVal');
+    const sideShowTimer = $('sideShowTimer');
+    const sideEnableAnimations = $('sideEnableAnimations');
+    const sideAutoReveal = $('sideAutoReveal');
+
+    async function loadAndApplySettings() {
+      const t = localStorage.getItem('token');
+      if (!username) return;
+      // Try server first
+      try {
+        const res = await fetch(`/settings/${username}?token=${localStorage.getItem('token')}`);
+        if (res.ok) {
+          const s = await res.json();
+          if (sideVolume) { sideVolume.value = s.volume ?? 70; sideVolumeVal.textContent = (s.volume ?? 70) + '%'; }
+          if (sideShowTimer) sideShowTimer.checked = s.showTimer ?? true;
+          if (sideEnableAnimations) sideEnableAnimations.checked = s.enableAnimations ?? true;
+          if (sideAutoReveal) sideAutoReveal.checked = s.autoRevealBlank ?? true;
+          // Apply settings
+          applyLocalSettings(s);
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      // fallback to localStorage defaults
+      const s = {
+        volume: Number(localStorage.getItem('volume') || 70),
+        showTimer: localStorage.getItem('showTimer') === 'false' ? false : true,
+        enableAnimations: localStorage.getItem('enableAnimations') !== 'false',
+        autoRevealBlank: localStorage.getItem('autoRevealBlank') !== 'false'
+      };
+      if (sideVolume) { sideVolume.value = s.volume; sideVolumeVal.textContent = s.volume + '%'; }
+      if (sideShowTimer) sideShowTimer.checked = s.showTimer;
+      if (sideEnableAnimations) sideEnableAnimations.checked = s.enableAnimations;
+      if (sideAutoReveal) sideAutoReveal.checked = s.autoRevealBlank;
+      applyLocalSettings(s);
+    }
+
+    function applyLocalSettings(s) {
+      // Volume - just store; can connect to audio API if present
+      localStorage.setItem('volume', s.volume);
+      // Timer
+      localStorage.setItem('showTimer', s.showTimer);
+      if (s.showTimer) $('timerDisplay').style.display = 'block'; else $('timerDisplay').style.display = 'none';
+      // Animations
+      localStorage.setItem('enableAnimations', s.enableAnimations);
+      // Auto reveal blank toggling
+      localStorage.setItem('autoRevealBlank', s.autoRevealBlank);
+      // Update gameState default for new games
+      gameState.autoRevealBlank = s.autoRevealBlank;
+    }
+
+    // Volume change
+    if (sideVolume) sideVolume.oninput = () => { sideVolumeVal.textContent = sideVolume.value + '%'; localStorage.setItem('volume', sideVolume.value); if (username && localStorage.getItem('token')) saveSettingsToServer(); };
+
+    // Toggles
+    if (sideShowTimer) sideShowTimer.onchange = () => { const v = sideShowTimer.checked; localStorage.setItem('showTimer', v); if (v) $('timerDisplay').style.display = 'block'; else $('timerDisplay').style.display = 'none'; saveSettingsToServer(); };
+    if (sideEnableAnimations) sideEnableAnimations.onchange = () => { const v = !!sideEnableAnimations.checked; localStorage.setItem('enableAnimations', v); saveSettingsToServer(); };
+    if (sideAutoReveal) sideAutoReveal.onchange = () => { const v = !!sideAutoReveal.checked; localStorage.setItem('autoRevealBlank', v); gameState.autoRevealBlank = v; saveSettingsToServer(); };
+
+    // Gameplay Introduction 'Read More' toggle
+    const sideIntroToggle = $('sideIntroToggle');
+    const sideIntroEl = $('sideIntro');
+    const sideIntroSummary = $('sideIntroSummary');
+    if (sideIntroToggle && sideIntroEl) {
+      sideIntroToggle.onclick = () => {
+        const isShown = sideIntroEl.style.display !== 'none';
+        sideIntroEl.style.display = isShown ? 'none' : 'block';
+        if (sideIntroSummary) sideIntroSummary.style.display = isShown ? 'block' : 'none';
+        sideIntroToggle.textContent = isShown ? 'Read More' : 'Hide';
+      };
+    }
+
+    async function saveSettingsToServer() {
+      if (!username || !localStorage.getItem('token')) return;
+      const payload = {
+        username,
+        token: localStorage.getItem('token'),
+        settings: {
+          volume: Number(sideVolume?.value || localStorage.getItem('volume') || 70),
+          showTimer: sideShowTimer?.checked ?? (localStorage.getItem('showTimer') !== 'false'),
+          enableAnimations: sideEnableAnimations?.checked ?? (localStorage.getItem('enableAnimations') !== 'false'),
+          autoRevealBlank: sideAutoReveal?.checked ?? (localStorage.getItem('autoRevealBlank') !== 'false'),
+          statsMode: localStorage.getItem('statsMode') || 'classic'
+        }
+      };
+      try {
+        const res = await fetch('/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) console.warn('Failed to save settings to server');
+      } catch (e) { console.warn('Failed to save settings', e); }
+    }
+
+    // load initial settings
+    loadAndApplySettings();
+  }, 1200);
 
   socket.on('lobbyList', (lobbies) => {
     const container = $('lobbyListContainer');
@@ -325,7 +554,7 @@ function connectSocket() {
   });
 
   socket.on('joinError', (msg) => {
-    alert('Error joining room: ' + msg);
+    showCenterToast('Error joining room: ' + (msg || ''), 2000);
   });
 
   socket.on('roomDeleted', () => {
@@ -382,13 +611,55 @@ function connectSocket() {
   });
 
   socket.on('modeSet', mode => {
-    $('modeSelect').value = mode;
-    gameState.mode = mode;
+    // mode may be object { mode, customParams } or a string
+    let modeVal = mode;
+    let customParams = null;
+    if (mode && typeof mode === 'object') {
+      modeVal = mode.mode;
+      customParams = mode.customParams;
+    }
+    $('modeSelect').value = modeVal;
+    gameState.mode = modeVal;
+    const customDiv = $('customParams');
+    if (modeVal === 'custom') {
+      if (customDiv) customDiv.style.display = 'block';
+      if (customParams && customParams.w) $('customW').value = customParams.w;
+      if (customParams && customParams.h) $('customH').value = customParams.h;
+      if (customParams && customParams.m) $('customM').value = customParams.m;
+      // Validate custom params and set start button state
+      if (typeof validateCustomParams === 'function') validateCustomParams();
+      // Ensure start btn enabled only if custom params valid
+      if (modeVal === 'custom') {
+        const vb = validateCustomParams();
+        const startBtn = $('startGameBtn');
+        if (startBtn) startBtn.disabled = !vb;
+      }
+    } else {
+      if (customDiv) customDiv.style.display = 'none';
+      const startBtn = $('startGameBtn');
+      if (startBtn) startBtn.disabled = false;
+    }
+  });
+
+  // Errors returned by the server for starting or mode setting
+  socket.on('startError', msg => {
+    showCenterToast(msg || 'Failed to start the game', 2000);
+  });
+  socket.on('modeSetError', (msg) => {
+    const customHintEl = $('customHint');
+    if (customHintEl) {
+      customHintEl.textContent = msg || 'Invalid custom params';
+    } else {
+      showCenterToast(msg || 'Invalid custom params', 2000);
+    }
   });
 
   // [修改] 将 gameStarted 逻辑独立出来，不要嵌套其他 socket.on
-  socket.on('gameStarted', ({ board, revealed, flagged, mode, startTime }) => {
-    const cfg = MODES[mode] || MODES.classic;
+  socket.on('gameStarted', ({ board, revealed, flagged, mode, startTime, w, h, m, signals }) => {
+    // If server provided custom width/height/mines (custom mode), prefer it
+    const cfg = (mode === 'custom' && typeof w === 'number' && typeof h === 'number' && typeof m === 'number')
+      ? { w: Number(w), h: Number(h), m: Number(m) }
+      : (MODES[mode] || MODES.classic);
     
     // 初始化游戏状态
     gameState = {
@@ -399,7 +670,7 @@ function connectSocket() {
       firstClick: true,
       gameOver: false,       // 确保重置
       animating: false,      // 确保重置
-      cheatLevel: 0,         // [修改] 开始新游戏时强制关闭作弊
+      // cheat feature removed
       timerInterval: null,    // 先占位
       creationAnim: { active: true, radius: 0, max: Math.max(cfg.w, cfg.h) * 1.5 } // [New] Animation state
     };
@@ -418,7 +689,14 @@ function connectSocket() {
     // [重要] 这里必须调用，确保非房主加入时能跳转页面并初始化 Canvas
     showGamePage(); 
     initCanvas(); // 确保 Canvas 尺寸被重新计算
+    // Hide side menu toggle when a game starts
+    setSideToggleVisible(false);
+    // If the menu is open, close it
+    const s = $('sideMenu');
+    if (s && s.classList.contains('open')) s.classList.remove('open');
     
+    // Apply any initial signals if provided
+    gameState.signals = (signals || []);
     // Start creation animation
     const animStart = Date.now();
     const animDuration = 800; // 0.8 second
@@ -449,7 +727,7 @@ function connectSocket() {
   socket.on('gameRestarted', ({ startTime, revealed, flagged }) => {
     gameState.gameOver = false;
     gameState.animating = false;
-    gameState.cheatLevel = 0; // [修改] 重启时关闭作弊
+    // cheat removed
     
     gameState.startTime = startTime;
     gameState.revealed = revealed;
@@ -464,13 +742,32 @@ function connectSocket() {
       
     drawBoard();
     updateMinesLeft();
+    // Hide side menu toggle on restart too
+    setSideToggleVisible(false);
   });
 
   // [修改] boardUpdate 保持不变
   socket.on('boardUpdate', ({ revealed, flagged }) => {
+    // Compute newly revealed tiles for animation
+    const prevRevealed = gameState.revealed ? gameState.revealed.map(r => r.slice()) : null;
     // 直接覆盖本地状态
     gameState.revealed = revealed;
     gameState.flagged = flagged;
+    if (prevRevealed) {
+      const newly = [];
+      for (let y = 0; y < gameState.height; y++) {
+        for (let x = 0; x < gameState.width; x++) {
+          if (!prevRevealed[y][x] && gameState.revealed[y][x]) newly.push({ x, y });
+        }
+      }
+      if (newly.length > 0) {
+        // set positions to animate; drawBoard will render them with a highlight
+        gameState.chordEffectPositions = newly;
+        // clear after animation duration
+        clearTimeout(gameState._chordEffectTimer);
+        gameState._chordEffectTimer = setTimeout(() => { gameState.chordEffectPositions = []; drawBoard(); }, 450);
+      }
+    }
     
     // 强制重绘
     drawBoard();
@@ -493,19 +790,22 @@ function connectSocket() {
   socket.on('gameOver', data => {
     if (gameState.gameOver) return; 
     gameState.gameOver = true;
-    gameState.cheatLevel = 0; // [修改] 游戏结束强制关闭作弊显示
+    // cheat removed
     drawBoard(); // 重绘一次以去除作弊透视效果
     
     clearInterval(gameState.timerInterval);
     const modeSel = $('statsModeSelect');
     loadStats(modeSel ? modeSel.value : 'classic'); // [新增] 游戏结束时刷新统计数据 
 
+    const enableAnimations = localStorage.getItem('enableAnimations') !== 'false';
     if (data.winner) {
-        fireworksAnim(3000);
+      if (enableAnimations) fireworksAnim(3000);
         setTimeout(() => {
             $('overTitle').textContent = 'Win!';
             $('overMessage').textContent = `All mines cleared in ${$('gameTimer').textContent}!`;
             showOverModal(data); 
+          // Show side menu toggle again when game has ended
+          setSideToggleVisible(true);
         }, 3000);
     } else {
         const startR = (data.bomb && typeof data.bomb.r === 'number') ? data.bomb.r : Math.floor(gameState.height/2);
@@ -513,18 +813,52 @@ function connectSocket() {
           
         if (!gameState.animating) {
             gameState.animating = true;
-            rippleExplosion(startC, startR, () => {
-                $('overTitle').textContent = 'Game Over!';
-                $('overMessage').textContent = 'You hit a mine!';
-                showOverModal(data);
-                gameState.animating = false; 
-            });
+            if (enableAnimations) {
+              rippleExplosion(startC, startR, () => {
+                  $('overTitle').textContent = 'Game Over!';
+                  $('overMessage').textContent = 'You hit a mine!';
+                  showOverModal(data);
+                  gameState.animating = false; 
+                  // Show side menu toggle again when game has ended
+                  setSideToggleVisible(true);
+              });
+            } else {
+              // If animations disabled, show modal without ripple
+              $('overTitle').textContent = 'Game Over!';
+              $('overMessage').textContent = 'You hit a mine!';
+              showOverModal(data);
+              gameState.animating = false;
+              // Show side menu toggle again when game has ended
+              setSideToggleVisible(true);
+            }
+            
         }
     }
   });
 
-  socket.on('signalReceived', ({ type, r, c, fromUser }) => {
-    drawSignal(type, c, r);
+  // Receive a signal object: { id, type, r, c, fromUser, expiresAt }
+  socket.on('signalReceived', (sig) => {
+    addSignal(sig);
+  });
+
+  // If we get a snapshot of signals when joining, set them up
+  socket.on('signalsSnapshot', (sigs) => {
+    if (!Array.isArray(sigs)) return;
+    gameState.signals = (sigs || []).map(s => ({ ...s }));
+    drawBoard();
+  });
+
+  // Server informs signal expired by id
+  socket.on('signalExpired', ({ id }) => {
+    if (!id) return;
+    gameState.signals = (gameState.signals || []).filter(s => s.id !== id);
+    drawBoard();
+  });
+
+  socket.on('chordFail', ({ r, c, reason }) => {
+    // Show a centered toast for illegal operation
+    const reasonText = reason === 'flagMismatch' ? 'Flags do not match number' : (reason || 'Invalid chord');
+    showCenterToast(reasonText, 2000);
   });
 
   socket.on('joinSuccess', (data) => {
@@ -567,6 +901,11 @@ function bindCanvasEvents(canvas) {
   canvas.oncontextmenu = null;
   canvas.onmousedown = null;
   canvas.onmouseup = null;
+  canvas._suppressNextContextMenu = false;
+  if (canvas._docMouseUpHandler) {
+    document.removeEventListener('mouseup', canvas._docMouseUpHandler);
+    canvas._docMouseUpHandler = null;
+  }
 
   // 1. 左键点击：揭开
   canvas.onclick = e => {
@@ -587,9 +926,23 @@ function bindCanvasEvents(canvas) {
     socket.emit('revealTile', { roomId: currentRoom, r: y, c: x });
   };
 
+  // 1.5-click (chording) via double-click: reveal neighbors if flagged count equals the number
+  canvas.ondblclick = e => {
+    if (!gameState.board || gameState.gameOver) return;
+    const { x, y } = getTile(e);
+    if (x < 0 || x >= gameState.width || y < 0 || y >= gameState.height) return;
+    // Only chord on revealed number tiles
+    if (!gameState.revealed[y][x] || gameState.board[y][x] <= 0) return;
+    socket.emit('chordTile', { roomId: currentRoom, r: y, c: x });
+    // animate a small chord pulse for quick feedback
+    animateChordPulse(x, y);
+  };
+
   // 2. 右键点击：插旗/问号
   canvas.oncontextmenu = e => {
     e.preventDefault();
+    // If we just completed a right-drag that sent a signal, skip this context menu toggle
+    if (canvas._suppressNextContextMenu) { canvas._suppressNextContextMenu = false; return; }
     if (!gameState.board || gameState.gameOver) return;
 
     const { x, y } = getTile(e);
@@ -613,33 +966,79 @@ function bindCanvasEvents(canvas) {
     socket.emit('toggleFlag', { roomId: currentRoom, r: y, c: x, state: nextVal });
   };
 
-  // 3. 中键拖拽：发信号 (保持原有逻辑，优化坐标获取)
-  let isDragging = false;
-  let dragStart = null;
+  // 3. 右键拖拽：发信号（改用右键拖拽替代中键），并保留右键快速点击插旗
+  let isRightDragging = false;
+  let rightDragStart = null;
+  let rightDragMoved = false;
 
   canvas.onmousedown = e => {
-    if (e.button === 1) { // 中键
-      e.preventDefault();
-      isDragging = true;
-      dragStart = getTile(e);
+    // If both left+right clicked together (buttons==3), treat as chord
+    if (e.buttons === 3) {
+      // chord click
+      const { x, y } = getTile(e);
+      if (!(x < 0 || x >= gameState.width || y < 0 || y >= gameState.height) && gameState.revealed[y][x] && gameState.board[y][x] > 0) {
+        socket.emit('chordTile', { roomId: currentRoom, r: y, c: x });
+        animateChordPulse(x, y);
+        return;
+      }
     }
+    // Start a right-button drag for sending signals
+      if (e.button === 2) { // 右键
+        e.preventDefault();
+        isRightDragging = true;
+        rightDragStart = getTile(e);
+        rightDragMoved = false;
+      }
   };
 
   canvas.onmouseup = e => {
-    if (isDragging && e.button === 1) {
+    // Right-button drag ended: if user dragged more than tiny threshold, send a signal
+    if (isRightDragging && e.button === 2) {
       e.preventDefault();
       const end = getTile(e);
-      const dx = end.x - dragStart.x;
-      const dy = end.y - dragStart.y;
-      
-      let type = 'question';
-      if (Math.abs(dx) > Math.abs(dy)) type = dx > 0 ? 'onMyWay' : 'help';
-      else type = dy > 0 ? 'question' : 'avoid';
+      const dx = end.x - rightDragStart.x;
+      const dy = end.y - rightDragStart.y;
 
-      socket.emit('sendSignal', { roomId: currentRoom, type, r: dragStart.y, c: dragStart.x });
-      isDragging = false;
+      // Movement threshold: require at least 0.5 tile movement to be considered a drag
+      const minMove = 0.5; 
+      if (Math.abs(dx) >= minMove || Math.abs(dy) >= minMove) {
+        let type = 'question';
+        if (Math.abs(dx) > Math.abs(dy)) type = dx > 0 ? 'onMyWay' : 'help';
+        else type = dy > 0 ? 'question' : 'avoid';
+
+        // Emit the signal at the original tile (rightDragStart)
+        socket.emit('sendSignal', { roomId: currentRoom, type, r: rightDragStart.y, c: rightDragStart.x });
+        // Provide small feedback locally that we sent a signal
+        showCenterToast(`Signal: ${type}`, 700);
+        // Prevent the subsequent contextmenu handler from toggling a flag
+        canvas._suppressNextContextMenu = true;
+      }
+      isRightDragging = false;
     }
   };
+
+  // Optional: detect movement for the right-drag to provide immediate UI feedback (no heavy drawing required)
+  canvas.onmousemove = e => {
+    if (isRightDragging) {
+      const pos = getTile(e);
+      const dx = pos.x - rightDragStart.x;
+      const dy = pos.y - rightDragStart.y;
+      // Use a threshold to avoid jitter
+      rightDragMoved = Math.abs(dx) >= 0.5 || Math.abs(dy) >= 0.5;
+      // keep only local right-drag movement state; do not store into gameState to avoid overlay
+      // (this prevents any visual overlay; arrow animation removed)
+      // rightDragMoved updated above is sufficient for decision-making.
+    }
+  };
+
+  // Cleanup in case mouseup happens outside of the canvas: reset the dragging state
+  const _docMouseUp = (e) => {
+    if (isRightDragging && e.button === 2) {
+      isRightDragging = false;
+    }
+  };
+  document.addEventListener('mouseup', _docMouseUp);
+  canvas._docMouseUpHandler = _docMouseUp;
 }
 
 function initCanvas() {
@@ -765,43 +1164,9 @@ function drawBoard() {
       ctx.strokeStyle = '#888';
       ctx.strokeRect(x*ts, y*ts, ts, ts);
 
-      // 绘制已翻开的雷
-      if (r && v === -1) {
-        // Microsoft Style Mine: Black ball with shine and spikes
-        const cx = x * ts + ts / 2;
-        const cy = y * ts + ts / 2;
-        const radius = ts * 0.3;
-
-        // Spikes (Lines)
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = Math.max(1, ts * 0.05);
-        ctx.beginPath();
-        // Horizontal
-        ctx.moveTo(cx - radius * 1.4, cy);
-        ctx.lineTo(cx + radius * 1.4, cy);
-        // Vertical
-        ctx.moveTo(cx, cy - radius * 1.4);
-        ctx.lineTo(cx, cy + radius * 1.4);
-        // Diagonals
-        const d = radius * 1.4 * 0.707;
-        ctx.moveTo(cx - d, cy - d);
-        ctx.lineTo(cx + d, cy + d);
-        ctx.moveTo(cx + d, cy - d);
-        ctx.lineTo(cx - d, cy + d);
-        ctx.stroke();
-
-        // Main Ball
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Shine (White spot)
-        ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(cx - radius * 0.3, cy - radius * 0.3, radius * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-      } 
+        // Mine rendering removed here (previously drew image or vector spikes).
+        // To keep the if-else chain syntactically valid, use a disabled branch here.
+        if (false) { /* mine drawing removed */ }
       // 绘制数字
       else if (r && v > 0) {
         ctx.save();
@@ -866,36 +1231,44 @@ function drawBoard() {
         ctx.textBaseline = 'alphabetic';
       }
 
-      // 作弊模式等级 3 - 在未翻开格子上显示内容（半透明）
-      if (!r && gameState.cheatLevel === 3) {
-        ctx.globalAlpha = 0.35;
-        if (v === -1) {
-          // Microsoft Style Mine (Ghost)
-          const cx = x * ts + ts / 2;
-          const cy = y * ts + ts / 2;
-          const radius = ts * 0.3;
-          ctx.fillStyle = 'black';
-          ctx.beginPath();
-          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (v > 0) {
-          // 修复错位：居中数字
-          const cols = ['', 'blue', 'green', 'red', 'navy', 'maroon', 'teal', 'black', 'gray'];
-          ctx.fillStyle = cols[v] || '#9c27b0'; // 紫色或原色
-          ctx.font = 'bold ' + Math.floor(ts * 0.5) + 'px Arial';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(v, x*ts + ts/2, y*ts + ts/2);
-        }
-        ctx.globalAlpha = 1.0;
-        // 恢复默认对齐（防止影响其他绘制）
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'alphabetic';
-      }
+      // cheat visualization removed — feature will be redesigned later
     }
   }
 
   // 胜利烟花效果（只触发一次）
+  // Draw active transient signals overlay
+  if (gameState.signals && gameState.signals.length) {
+    ctx.save();
+    for (let i = gameState.signals.length - 1; i >= 0; i--) {
+      const s = gameState.signals[i];
+      // remove expired
+      if (Date.now() > s.expiresAt) {
+        gameState.signals.splice(i, 1);
+        continue;
+      }
+      const labelMap = { help: 'Help!', onMyWay: 'OnWay', avoid: 'Avoid', question: '?' };
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(255,235,59,0.9)';
+      ctx.fillRect(s.c * ts, s.r * ts, ts, ts);
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold ' + Math.floor(ts * 0.32) + 'px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelMap[s.type] || '?', s.c * ts + ts/2, s.r * ts + ts/2);
+    }
+    ctx.restore();
+  }
+  // Ensure mine icon is on top of overlays (draw any revealed mines on top)
+  for (let y = 0; y < gameState.height; y++) {
+    for (let x = 0; x < gameState.width; x++) {
+      const v = gameState.board[y][x];
+      const r = gameState.revealed[y][x];
+      // Mine overlay rendering removed here (previously drew spikes)
+      // Retaining a no-op block to keep structure valid
+      if (false) { /* overlay mine rendering removed */ }
+    }
+  }
+  // NOTE: Arrow overlay removed as per UX preference; signals no longer show arrow while dragging
   if (isWon && !gameState.winEffectPlayed) {
     gameState.winEffectPlayed = true;  // 防止重复播放
     // playSound('win');  // 等你加音效时再打开
@@ -931,28 +1304,18 @@ function drawBoard() {
 }
 
 function drawSignal(type, x, y) {
-  const canvas = $('boardCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const ts = gameState.tileSize;
-  const map = {
-    help: 'Help!',
-    onMyWay: 'Walking',
-    avoid: 'Warning',
-    question: 'Question'
-  };
+  // This function is kept for backward compatibility but now uses gameState.signals
+  addSignal({ type, r: y, c: x, fromUser: null, id: Math.random().toString(36).substring(2,9).toUpperCase(), expiresAt: Date.now() + 2000 });
+}
 
-  ctx.save();
-  ctx.globalAlpha = 0.7;
-  ctx.fillStyle = 'yellow';
-  ctx.fillRect(x * ts, y * ts, ts, ts);
-  ctx.fillStyle = 'red';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(map[type] || '?', x * ts + ts/2, y * ts + ts/2 + 6);
-  ctx.restore();
-
-  setTimeout(drawBoard, 2000); // 2秒后清除
+function addSignal(signal) {
+  // normalize fields
+  const { id = Math.random().toString(36).substring(2,9).toUpperCase(), type, r, c, fromUser = '', expiresAt } = signal;
+  const ttl = expiresAt ? (expiresAt - Date.now()) : 2000;
+  const eAt = expiresAt || (Date.now() + ttl);
+  if (!gameState.signals) gameState.signals = [];
+  gameState.signals.push({ id, type, r, c, fromUser, expiresAt: eAt });
+  drawBoard();
 }
 
 function floodReveal(y, x) {
@@ -986,6 +1349,8 @@ function showGamePage() {
   loadTheme();
   $('mainPage').style.display = 'none';
   $('gamePage').style.display = 'block';
+  // Hide side menu toggle once user enters the game page
+  setSideToggleVisible(false);
 
   const canvas = $('boardCanvas');
   const ctx = canvas.getContext('2d');
@@ -1009,12 +1374,7 @@ function loadTheme() {
   if ($('gamePage').style.display === 'block') drawBoard();
 }
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'c' || e.key === 'C') {
-    gameState.cheatLevel = (gameState.cheatLevel + 1) % 4;
-    drawBoard();
-  }
-});
+// Cheat key removed; feature will be reimplemented later
 
 
 
@@ -1225,4 +1585,62 @@ function showOverModal(data) {
         $('overModal').style.display = 'none';
         location.reload();
     };
+}
+
+// Small toast helper for in-game info
+function showToast(msg, duration = 2000) {
+  let el = document.querySelector('.game-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'game-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// Center toast for illegal operations (e.g., invalid chord)
+function showCenterToast(msg, duration = 1600) {
+  let el = document.querySelector('.center-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'center-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+function animateChordPulse(tileX, tileY) {
+  const canvas = $('boardCanvas');
+  if (!canvas) return;
+  const ts = gameState.tileSize;
+  const ctx = canvas.getContext('2d');
+  let r = 0;
+  const maxR = Math.max(2, Math.min(8, Math.max(gameState.width, gameState.height) * 0.15));
+  const step = maxR / 8;
+  gameState.chordPulse = { x: tileX, y: tileY, r: 0 };
+  const anim = () => {
+    r += step;
+    gameState.chordPulse.r = r;
+    drawBoard();
+    // draw the ring overlay last
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,235,59,0.9)';
+    ctx.lineWidth = Math.max(2, ts * 0.06);
+    ctx.beginPath();
+    ctx.arc(tileX*ts + ts/2, tileY*ts + ts/2, (r * ts), 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+    if (r < maxR) requestAnimationFrame(anim);
+    else {
+      gameState.chordPulse = null;
+      drawBoard();
+    }
+  };
+  anim();
 }
