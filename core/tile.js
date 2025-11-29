@@ -1,25 +1,25 @@
 /**
- * @type {unique symbol}
  * @typedef {{t: typeof TileEmp}} TileEmp
  */
-export const TileEmp = Symbol("Empty Tile");
+export const TileEmp = "EMP";
 /**
- * @type {unique symbol}
  * @typedef {{t: typeof TileMin}} TileMin
  */
-export const TileMin = Symbol("Mine Tile");
-
+export const TileMin = "MIN";
 /**
- * @type {unique symbol}
  * @typedef {{t: typeof TileNum, n: number}} TileNum
  */
-export const TileNum = Symbol("Number Tile");
+export const TileNum = "NUM";
 
 /**
- * @type {unique symbol}
  * @typedef {typeof TileHidden} TileHidden
  */
-export const TileHidden = Symbol("Hidden Tile");
+export const TileHidden = "HID";
+
+/**
+ * @typedef {typeof TileFlag} TileFlag
+ */
+export const TileFlag = "FLG";
 
 /** @typedef {TileEmp | TileMin | TileNum} Tile */
 

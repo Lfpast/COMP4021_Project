@@ -1,5 +1,5 @@
 import { range } from "es-toolkit";
-import { Tile, TileHidden } from "./tile.js";
+import { Tile, TileFlag, TileHidden } from "./tile.js";
 
 /**
  * Get all coordinates of a board with width w and height h.
@@ -44,6 +44,11 @@ export class Board {
 	#tiles;
 	/** @type {boolean[][]} */
 	#visible;
+	/** @type {boolean[][]} */
+	#flag;
+
+	#w;
+	#h;
 
 	/**
 	 * @param {number} w
@@ -57,13 +62,16 @@ export class Board {
 		if (!(w > 0)) throw new RangeError(`Width must be positive, got ${w}`);
 		if (!(h > 0)) throw new RangeError(`Height must be positive, got ${h}`);
 
-		this.w = w;
-		this.h = h;
+		this.#w = w;
+		this.#h = h;
 
 		this.#tiles = Array(w)
 			.fill(null)
 			.map(() => Array(h).fill(Tile.Emp));
 		this.#visible = Array(w)
+			.fill(null)
+			.map(() => Array(h).fill(false));
+		this.#flag = Array(w)
 			.fill(null)
 			.map(() => Array(h).fill(false));
 	}
@@ -73,20 +81,26 @@ export class Board {
 	 * otherwise it returns {@link TileHidden}. Throw {@link RangeError} if out of bounds.
 	 * @param {number} x
 	 * @param {number} y
-	 * @returns {Tile | TileHidden}
+	 * @returns {Tile | TileHidden | TileFlag}
 	 */
 	apply(x, y) {
-		if (x < 0 || x >= this.w || y < 0 || y >= this.h) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
 			throw new RangeError(
-				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.w}, ${this.h})`,
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
 		if (this.#visible[x][y]) {
 			// @ts-expect-error impossible out-of-bounds
 			return this.#tiles[x][y];
+		} else {
+			// @ts-expect-error impossible out-of-bounds
+			if (this.#flag[x][y]) {
+				return TileFlag;
+			} else {
+				return TileHidden;
+			}
 		}
-		return TileHidden;
 	}
 
 	/**
@@ -96,9 +110,9 @@ export class Board {
 	 * @returns {Tile}
 	 */
 	get(x, y) {
-		if (x < 0 || x >= this.w || y < 0 || y >= this.h) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
 			throw new RangeError(
-				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.w}, ${this.h})`,
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
@@ -112,9 +126,9 @@ export class Board {
 	 * @param {Tile} t
 	 */
 	set(x, y, t) {
-		if (x < 0 || x >= this.w || y < 0 || y >= this.h) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
 			throw new RangeError(
-				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.w}, ${this.h})`,
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
@@ -128,9 +142,9 @@ export class Board {
 	 * @returns {boolean}
 	 */
 	isVisible(x, y) {
-		if (x < 0 || x >= this.w || y < 0 || y >= this.h) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
 			throw new RangeError(
-				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.w}, ${this.h})`,
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
@@ -144,12 +158,62 @@ export class Board {
 	 * @param {boolean} v
 	 */
 	setVisible(x, y, v) {
-		if (x < 0 || x >= this.w || y < 0 || y >= this.h) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
 			throw new RangeError(
-				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.w}, ${this.h})`,
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
 		this.#visible[x][y] = v;
 	}
+
+	/**
+	 * Check if the {@link Tile} at (x, y) has a flag. Throw {@link RangeError} if out of bounds.
+	 * @param {number} x 
+	 * @param {number} y 
+	 * @returns {boolean}
+	 */
+	hasFlag(x, y) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
+			throw new RangeError(
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
+			);
+		}
+		// @ts-expect-error impossible out-of-bounds
+		return this.#flag[x][y];
+	}
+
+	/**
+	 * Set the flag of the {@link Tile} at (x, y). Throw {@link RangeError} if out of bounds.
+	 * @param {number} x 
+	 * @param {number} y 
+	 * @param {boolean} f 
+	 */
+	setFlag(x, y, f) {
+		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
+			throw new RangeError(
+				`Coordinates out of bounds: (${x}, ${y}) for board of size (${this.#w}, ${this.#h})`,
+			);
+		}
+		// @ts-expect-error impossible out-of-bounds
+		this.#flag[x][y] = f;
+	}
+
+
+	/**
+	 * Convert the board to a plain object representation.
+	 * 
+	 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
+	 * @returns {PlainBoard}
+	 */
+	toPlain() {
+		return {
+			w: this.#w,
+			h: this.#h,
+			tiles: this.#tiles,
+			visible: this.#visible,
+			flag: this.#flag,
+		};
+	}
+
 }

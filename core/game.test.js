@@ -190,7 +190,7 @@ describe("Game Instance", () => {
 		it("should notify observers on reveal", () => {
 			/** @type {[number, number][]} */
 			const changes = [];
-			const dispose = game.observe((cs) => {
+			const dispose = game.subscribe((cs) => {
 				changes.push(...cs);
 			});
 
@@ -203,7 +203,7 @@ describe("Game Instance", () => {
 
 		it("should stop notifying after dispose", () => {
 			let callCount = 0;
-			const dispose = game.observe(() => {
+			const dispose = game.subscribe(() => {
 				callCount++;
 			});
 

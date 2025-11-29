@@ -53,7 +53,7 @@ describe("Board Class", () => {
 	describe("Constructor", () => {
 		it("should create a board with valid dimensions", () => {
 			const board = new Board(10, 20);
-			expect(board.w).toBe(10);
+			expect(board.#w).toBe(10);
 			expect(board.h).toBe(20);
 		});
 

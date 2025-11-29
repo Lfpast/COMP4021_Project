@@ -1,20 +1,27 @@
 {
-  "name": "multisweeper",
-  "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.13.2",
-    "bcryptjs": "^2.4.3",
-    "express": "^4.21.1",
-    "lowdb": "^7.0.1",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
-  }
+	"name": "multisweeper",
+	"version": "1.0.0",
+	"description": "",
+	"main": "server.js",
+	"scripts": {
+		"start": "node server.js",
+		"typecheck": "tsc -p jsconfig.json --noEmit",
+		"lint": "biome check --write"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"axios": "^1.13.2",
+		"bcryptjs": "^2.4.3",
+		"es-toolkit": "^1.42.0",
+		"express": "^4.21.1",
+		"lowdb": "^7.0.1",
+		"socket.io": "^4.8.1",
+		"socket.io-client": "^4.8.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.6",
+		"typescript": "^5"
+	}
 }
