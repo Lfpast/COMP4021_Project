@@ -1,3 +1,14 @@
+# Multisweeper
+
+To get started, ...
+
+```sh
+npm i
+npm run go
+```
+
+then, go to http://localhost:8000. Have fun!
+
 # Project Announcement: Multisweeper
 
 ## 1. Title of the Project

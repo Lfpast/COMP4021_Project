@@ -5,7 +5,7 @@
 	"main": "server-game.js",
 	"type": "module",
 	"scripts": {
-		"start": "node server-game.js",
+		"go": "node server-game.js",
 		"typecheck": "tsc -p jsconfig.json --noEmit",
 		"lint": "biome check --write"
 	},
