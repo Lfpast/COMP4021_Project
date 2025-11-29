@@ -4,6 +4,7 @@ import express from "express";
 import { Server } from "socket.io";
 import { board } from "./core/board.js";
 import { Game } from "./core/game.js";
+import { TileFlag } from "./core/tile.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -29,6 +30,10 @@ const rooms = new Map();
  * @type {Map<string, Map<string, number>>}
  */
 const userIndices = new Map();
+/**
+ * @type {Map<string, number>}
+ */
+const gameEpoch = new Map();
 
 app.post("/create-room", (req, res) => {
 	const { w, h, c } = req.body;
@@ -88,9 +93,30 @@ io.on("connection", (socket) => {
 		cs: [...board(game.w, game.h)],
 	});
 
+	/**
+	 * @type {NodeJS.Timeout | null}
+	 */
+	let updater = null;
+	const update = () => {
+		const epoch = gameEpoch.get(room);
+		const time = epoch ? Math.floor((Date.now() - epoch) / 1000) : 0;
+		const mine = game.mines - [...board(game.w, game.h)].map(([x, y]) => game.apply(x, y)).filter(t => t === TileFlag).length;
+		io.to(room).emit("update status", {
+			gameStatus: game.isGameOver(),
+			timeDisplay: time,
+			mineDisplay: mine,
+		});
+	};
+	update();
+
 	const unsubscribe = game.subscribe((b, cs) => {
 		console.log(`[${socket.id}] Board update in room ${room}`);
 		io.to(room).emit("update board", { b: b.toPlain(), cs });
+		update();
+		if (!gameEpoch.has(room)) {
+			gameEpoch.set(room, Date.now());
+			updater = setInterval(update, 1000);
+		}
 	});
 
 	console.log(`[${socket.id}] User ${user} connect to room ${room}.`);
@@ -145,6 +171,10 @@ io.on("connection", (socket) => {
 			`[${socket.id}] User ${user} disconnect from room ${room} (Reason: ${reason})`,
 		);
 		unsubscribe();
+		if (updater !== null) {
+			clearInterval(updater);
+			updater = null;
+		}
 	});
 });
 

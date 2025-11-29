@@ -28,20 +28,83 @@
 			align-items: center;
 			width: 100%;
 			overflow: hidden;
+			background-color: #897a6c;
 		}
+
 		#canvas-container {
 			position: relative;
-			width: fit-content;
-			height: fit-content;
 			cursor: none;
 		}
-		#canvas,
-		#canvasFocus,
-		.cursor-canvas,
-		.signal-canvas {
+
+		#canvas-background,
+		.canvas-signal {
 			position: absolute;
 			left: 0;
 			top: 0;
+		}
+
+		#canvas,
+		#canvas-press,
+		.canvas-focus {
+			position: absolute;
+			left: calc(32px * 2);
+			bottom: calc(32px * 2);
+		}
+
+		#canvas-background {
+			z-index: 0;
+		}
+		#canvas {
+			z-index: 1;
+			pointer-events: none;
+		}
+		#canvas-press {
+			z-index: 2;
+			pointer-events: none;
+		}
+		.canvas-focus {
+			z-index: 3;
+			pointer-events: none;
+		}
+		.canvas-signal {
+			z-index: 4;
+			pointer-events: none;
+			animation: shake 0.5s infinite;
+		}
+		#overlay {
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			background-color: rgba(0, 0, 0, 0.5);
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			z-index: 10;
+
+			font-family: 'Tomorrow Night', monospace;
+			color: white;
+
+			text-shadow: 2px 2px 0px black;
+		}
+
+		#overlay-text {
+			font-size: 32px;
+		}
+
+		#overlay-description {
+			font-size: 16px;
+		}
+
+		#cursor {
+			position: fixed;
+			left: -100vh;
+			top: -100vh;
+			pointer-events: none;
+
+			z-index: 100;
 		}
 
 		@keyframes shake {
@@ -61,35 +124,6 @@
 				transform: translate(0, 0);
 			}
 		}
-
-		.signal-canvas {
-			animation: shake 0.5s infinite;
-			z-index: 3;
-			pointer-events: none;
-		}
-		.cursor-canvas {
-			z-index: 2;
-			pointer-events: none;
-		}
-		#canvasFocus {
-			z-index: 1;
-			pointer-events: none;
-		}
-		#canvas {
-			z-index: 0;
-		}
-		#canvas-background {
-			z-index: -1;
-		}
-
-		#cursor {
-			position: fixed;
-			left: -100vh;
-			top: -100vh;
-			pointer-events: none;
-
-			z-index: 100;
-		}
 		</style>
 	</head>
 	<body>
@@ -101,10 +135,18 @@
 			</form>
 		</div>
 		<div id="game-container">
-			<div id="canvas-container">
+			<div id="canvas-container" style="width: 640px; height: 768px;">
+				<canvas id="canvas-background" width="640" height="768"></canvas>
 				<canvas id="canvas" width="512" height="512"></canvas>
-				<canvas id="canvas" width="512" height="512"></canvas>
-				<canvas id="canvasFocus" width="512" height="512"></canvas>
+				<canvas id="canvas-press" width="512" height="512"></canvas>
+				<div id="overlay">
+					<div id="overlay-text">
+						Joining Game...
+					</div>
+					<div id="overlay-description">
+						Please Wait
+					</div>
+				</div>
 			</div>
 		</div>
 		<canvas id="cursor" width="32" height="32"></canvas>
@@ -128,26 +170,45 @@
 		// Pixels Per Tile
 		const PPT = 32;
 
-		const canvas = $("#canvas")[0];
-		const canvasFocus = $("#canvasFocus")[0];
-		const canvasCursor = $("#cursor");
 		const canvasContainer = $("#canvas-container");
+		const overlay = $("#overlay");
+		const overlayText = $("#overlay-text");
+		const overlayDescription = $("#overlay-description");
 
-		const cursorCanvases = [];
-		const cursorCanvasCtx = [];
+		const canvasBackground = $("#canvas-background");
+		const ctxBackground = canvasBackground[0].getContext("2d");
+
+		const canvas = $("#canvas");
+		const ctx = canvas[0].getContext("2d");
+
+		const canvasPress = $("#canvas-press");
+		const ctxPress = canvasPress[0].getContext("2d");
+
+		const canvasCursor = $("#cursor");
+		const ctxCursor = canvasCursor[0].getContext("2d");
+
+		const canvasesFocus = [];
+		const ctxsFocus = [];
 		for (let i = 0; i < 8; i++) {
 			const c = $("<canvas></canvas>").attr({
-				id: `cursor-canvas-${i}`,
-				class: "cursor-canvas",
+				class: "canvas-focus",
 			});
-			cursorCanvases.push(c);
-			cursorCanvasCtx.push(c[0].getContext("2d"));
+			canvasesFocus.push(c);
+			ctxsFocus.push(c[0].getContext("2d"));
 			canvasContainer.append(c);
 		}
 
 		const form = $("#join-form");
 		const userInput = $("#user");
 		const roomInput = $("#room");
+
+		const TomorrowNight = new FontFace(
+			"Tomorrow Night",
+			'url("./assets/Tomorrow_Night.ttf") format("truetype")',
+		);
+		TomorrowNight.load().then((font) => {
+			document.fonts.add(font);
+		});
 
 		const Cells = new Image();
 		Cells.src = "./assets/Cells.png";
@@ -161,9 +222,11 @@
 		const Players = new Image();
 		Players.src = "./assets/Players.png";
 
-		const ctx = canvas.getContext("2d");
-		const ctxPress = canvasFocus.getContext("2d");
-		const ctxCursor = canvasCursor[0].getContext("2d");
+		const Backgrounds = new Image();
+		Backgrounds.src = "./assets/Backgrounds.png";
+
+		const Borders = new Image();
+		Borders.src = "./assets/Borders.png";
 
 		form.on("submit", (e) => {
 			e.preventDefault();
@@ -185,224 +248,501 @@
 				console.log("Disconnected from server.");
 			});
 
-			/**
-			 * Convert the board to a plain object representation.
-			 *
-			 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
-			 * @type {PlainBoard}
-			 */
-			let board;
-
-			const type = (x, y) => {
-				if (board.visible[x][y]) {
-					const tile = board.tiles[x][y];
-					if (tile.t === "EMP") {
-						return 0;
-					}
-					if (tile.t === "NUM") {
-						return tile.n;
-					}
-					if (tile.t === "MIN") {
-						return "mine";
-					}
-				} else {
-					if (board.flag[x][y]) {
-						return "flag";
-					} else {
-						return "hidden";
-					}
-				}
-				throw new Error("Unreachable");
-			};
-
-			/**
-			 * @param {number} x
-			 * @param {number} y
-			 */
-			const draw = (x, y) => {
-				if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
-					return;
-				}
-
-				const t = type(x, y);
-				ctx.imageSmoothingEnabled = false;
-				switch (t) {
-					case 0:
-						ctx.drawImage(
-							Grids,
-							0 * 16,
-							0 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-						break;
-					case "hidden":
-						ctx.drawImage(
-							Cells,
-							3 * 16,
-							4 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-						break;
-					case "mine":
-						ctx.drawImage(
-							Cells,
-							2 * 16,
-							4 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-						break;
-					case "flag":
-						ctx.drawImage(
-							Cells,
-							0 * 16,
-							4 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-						break;
-					default:
-						ctx.drawImage(
-							Cells,
-							(t - 1) * 16,
-							0 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-				}
-			};
-
-			/**
-			 * @param {number} x
-			 * @param {number} y
-			 * @param {Partial<{n: number}>} opts
-			 */
-			const drawFocus = (x, y, opts = {}) => {
-				if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
-					return;
-				}
-
-				const { n = 0 } = opts;
-				const ctxCursor = cursorCanvasCtx[n];
-
-				ctxCursor.imageSmoothingEnabled = false;
-				ctxCursor.globalCompositeOperation = "multiply";
-				ctxCursor.globalAlpha = 0.75;
-
-				ctxCursor.clearRect(0, 0, canvas.width, canvas.height);
-				ctxCursor.drawImage(
-					Players,
-					n * 6 * 16,
-					3 * 16,
-					16 * 3,
-					16 * 3,
-					(x - 1) * PPT,
-					(y - 1) * PPT,
-					PPT * 3,
-					PPT * 3,
-				);
-			};
-
-			/**
-			 * @param {number} x
-			 * @param {number} y
-			 * @param {Partial<{clear: boolean, rec: boolean}>} opts
-			 */
-			const drawPress = (x, y, opts = {}) => {
-				if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
-					return;
-				}
-
-				const { clear = false, rec = true } = opts;
-
-				ctxPress.imageSmoothingEnabled = false;
-
-				if (clear) {
-					ctxPress.clearRect(0, 0, canvas.width, canvas.height);
-					return;
-				}
-
-				const t = type(x, y);
-				switch (t) {
-					case 0:
-						break;
-					case "hidden":
-						ctxPress.drawImage(
-							Grids,
-							1 * 16,
-							1 * 16,
-							16,
-							16,
-							x * PPT,
-							y * PPT,
-							PPT,
-							PPT,
-						);
-						break;
-					case "mine":
-						break;
-					case "flag":
-						break;
-					default:
-						if (rec) {
-							drawPress(x - 1, y - 1, { rec: false });
-							drawPress(x, y - 1, { rec: false });
-							drawPress(x + 1, y - 1, { rec: false });
-							drawPress(x - 1, y, { rec: false });
-							drawPress(x + 1, y, { rec: false });
-							drawPress(x - 1, y + 1, { rec: false });
-							drawPress(x, y + 1, { rec: false });
-							drawPress(x + 1, y + 1, { rec: false });
-						}
-				}
-			};
-
 			socket.on("init board", ({ w, h }) => {
 				console.log(`Initialize board with width: ${w}, height: ${h}`);
-				canvas.width = w * PPT;
-				canvas.height = h * PPT;
-				canvasFocus.width = w * PPT;
-				canvasFocus.height = h * PPT;
-				canvasContainer.css("width", `${w * PPT}px`);
-				canvasContainer.css("height", `${h * PPT}px`);
-				for (const c of cursorCanvases) {
-					c.attr("width", w * PPT);
-					c.attr("height", h * PPT);
+
+				overlay.fadeOut();
+
+				// Border L, R, T, B
+				const bdl = 2 * PPT;
+				const bdr = 2 * PPT;
+				const bdt = 4 * PPT;
+				const bdb = 2 * PPT;
+
+				// Foreground W, H
+				const fgw = w * PPT;
+				const fgh = h * PPT;
+				// Background W, H
+				const bgw = fgw + bdl + bdr;
+				const bgh = fgh + bdt + bdb;
+
+				canvasContainer.css("width", `${bgw}px`);
+				canvasContainer.css("height", `${bgh}px`);
+
+				canvasBackground[0].width = bgw;
+				canvasBackground[0].height = bgh;
+				canvas[0].width = fgw;
+				canvas[0].height = fgh;
+				canvasPress[0].width = fgw;
+				canvasPress[0].height = fgh;
+
+				for (const c of canvasesFocus) {
+					c[0].width = fgw;
+					c[0].height = fgh;
 				}
 
-				let prevFocusX = -1;
-				let prevFocusY = -1;
-				canvas.addEventListener("mousemove", (event) => {
+				/**
+				 * Convert the board to a plain object representation.
+				 *
+				 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
+				 * @type {PlainBoard}
+				 */
+				let board;
+
+				const type = (x, y) => {
+					if (board.visible[x][y]) {
+						const tile = board.tiles[x][y];
+						if (tile.t === "EMP") {
+							return 0;
+						}
+						if (tile.t === "NUM") {
+							return tile.n;
+						}
+						if (tile.t === "MIN") {
+							return "mine";
+						}
+					} else {
+						if (board.flag[x][y]) {
+							return "flag";
+						} else {
+							return "hidden";
+						}
+					}
+					throw new Error("Unreachable");
+				};
+
+				/**
+				 * @param {number} x
+				 * @param {number} y
+				 */
+				const draw = (x, y) => {
+					if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
+						return;
+					}
+
+					const t = type(x, y);
+					ctx.imageSmoothingEnabled = false;
+					switch (t) {
+						case 0:
+							ctx.drawImage(
+								Grids,
+								0 * 16,
+								0 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+							break;
+						case "hidden":
+							ctx.drawImage(
+								Cells,
+								3 * 16,
+								4 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+							break;
+						case "mine":
+							ctx.drawImage(
+								Cells,
+								2 * 16,
+								4 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+							break;
+						case "flag":
+							ctx.drawImage(
+								Cells,
+								0 * 16,
+								4 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+							break;
+						default:
+							ctx.drawImage(
+								Cells,
+								(t - 1) * 16,
+								0 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+					}
+				};
+
+				/**
+				 * @param {number} x
+				 * @param {number} y
+				 * @param {Partial<{n: number}>} opts
+				 */
+				const drawFocus = (x, y, opts = {}) => {
+					const { n = 0 } = opts;
+					const ctxFocus = ctxsFocus[n];
+
+					ctxFocus.imageSmoothingEnabled = false;
+					ctxFocus.globalCompositeOperation = "multiply";
+					ctxFocus.globalAlpha = 0.75;
+
+					ctxFocus.clearRect(0, 0, fgw, fgh);
+
+					if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
+						return;
+					}
+
+					ctxFocus.drawImage(
+						Players,
+						n * 6 * 16,
+						3 * 16,
+						16 * 3,
+						16 * 3,
+						(x - 1) * PPT,
+						(y - 1) * PPT,
+						PPT * 3,
+						PPT * 3,
+					);
+				};
+
+				/**
+				 * @param {number} x
+				 * @param {number} y
+				 * @param {Partial<{clear: boolean, rec: boolean}>} opts
+				 */
+				const drawPress = (x, y, opts = {}) => {
+					const { clear = false, rec = true } = opts;
+
+					ctxPress.imageSmoothingEnabled = false;
+
+					if (clear) {
+						ctxPress.clearRect(0, 0, fgw, fgh);
+						return;
+					}
+
+					if (x < 0 || x >= board.w || y < 0 || y >= board.h) {
+						return;
+					}
+
+					const t = type(x, y);
+					switch (t) {
+						case 0:
+							break;
+						case "hidden":
+							ctxPress.drawImage(
+								Grids,
+								1 * 16,
+								1 * 16,
+								16,
+								16,
+								x * PPT,
+								y * PPT,
+								PPT,
+								PPT,
+							);
+							break;
+						case "mine":
+							break;
+						case "flag":
+							break;
+						default:
+							if (rec) {
+								drawPress(x - 1, y - 1, { rec: false });
+								drawPress(x, y - 1, { rec: false });
+								drawPress(x + 1, y - 1, { rec: false });
+								drawPress(x - 1, y, { rec: false });
+								drawPress(x + 1, y, { rec: false });
+								drawPress(x - 1, y + 1, { rec: false });
+								drawPress(x, y + 1, { rec: false });
+								drawPress(x + 1, y + 1, { rec: false });
+							}
+					}
+				};
+
+				let gameStatus = "GAMING";
+				let timeDisplay = 0;
+				let mineDisplay = 0;
+
+				const drawBg = () => {
+					ctxBackground.imageSmoothingEnabled = false;
+					ctxBackground.clearRect(0, 0, bgw, bgh);
+
+					const drawBgTile = (img, x, y, sx, sy) => {
+						ctxBackground.drawImage(
+							img,
+							sx * 16,
+							sy * 16,
+							16,
+							16,
+							x * PPT + bdl,
+							y * PPT + bdt,
+							PPT,
+							PPT,
+						);
+					};
+
+					const drawText = (text, x, y, align) => {
+						ctxBackground.textRendering = "geometricPrecision";
+						ctxBackground.imageSmoothingEnabled = false;
+						ctxBackground.font = `${PPT * 0.75}px 'Tomorrow Night'`;
+						ctxBackground.textAlign = align;
+						ctxBackground.textBaseline = "middle";
+
+						const ox = (() => {
+							switch (align) {
+								case "left":
+									return +0.05;
+								case "center":
+									return 0;
+								case "right":
+									return -0.05;
+							}
+						})();
+						const oy = 0.7;
+
+						ctxBackground.fillStyle = "black";
+						ctxBackground.fillText(
+							text,
+							(x + ox + 1 / 16) * PPT + bdl,
+							(y + oy + 1 / 16) * PPT + bdt,
+						);
+
+						ctxBackground.fillStyle = "white";
+						ctxBackground.fillText(
+							text,
+							(x + ox) * PPT + bdl,
+							(y + oy) * PPT + bdt,
+						);
+					};
+
+					// Given w and h, return the coordinates of the border tiles.
+					function* border(l, t, r, b) {
+						for (let x = l - 1; x <= r; x++) {
+							for (let y = t - 1; y <= b; y++) {
+								if (x === l - 1 || x === r || y === t - 1 || y === b) {
+									yield [x, y];
+								}
+							}
+						}
+					}
+
+					// Draw background of background
+					for (let x = -bdl / PPT; x < fgw / PPT + bdr / PPT; x++) {
+						for (let y = -bdt / PPT; y < fgh / PPT + bdb / PPT; y++) {
+							let ox = 1;
+							let oy = 4;
+							if (x === -bdl / PPT) {
+								ox = 0;
+							}
+							if (y === -bdt / PPT) {
+								oy = 3;
+							}
+							if (x === fgw / PPT + bdr / PPT - 1) {
+								ox = 2;
+							}
+							if (y === fgh / PPT + bdb / PPT - 1) {
+								oy = 5;
+							}
+							drawBgTile(Backgrounds, x, y, ox, oy);
+						}
+					}
+
+					// Draw border
+					for (const [x, y] of border(0, 0, fgw / PPT, fgh / PPT)) {
+						let ox = 2;
+						let oy = 2;
+						if (x === -1) {
+							ox = 0;
+						}
+						if (y === -1) {
+							oy = 0;
+						}
+						if (x === 0) {
+							ox = 1;
+						}
+						if (y === 0) {
+							oy = 1;
+						}
+						if (x === fgw / PPT) {
+							ox = 3;
+						}
+						if (y === fgh / PPT) {
+							oy = 3;
+						}
+						drawBgTile(Borders, x, y, ox, oy);
+					}
+
+					// TIME/FLAG Length
+					const tfLen = Math.min(Math.floor((fgw / PPT - 3) / 2), 4);
+
+					// Draw TIME BG
+					drawBgTile(Backgrounds, 0, -2, 4, 1);
+					// Draw TIME
+					drawBgTile(UI, 0, -2, 0, 1);
+					for (let i = 1; i < tfLen; i++) {
+						drawBgTile(Backgrounds, i, -2, 7, 1);
+					}
+					// Draw TIME Border
+					for (const [x, y] of border(0, -2, tfLen, -1)) {
+						let ox = 3;
+						let oy = 9;
+						if (x === -1) {
+							ox -= 1;
+						}
+						if (y === -3) {
+							oy -= 1;
+						}
+						if (x === tfLen) {
+							ox += 1;
+						}
+						if (y === -1) {
+							oy += 1;
+						}
+						drawBgTile(UI, x, y, ox, oy);
+					}
+
+					// Draw FLAG BG
+					for (let i = fgw / PPT - 1; i > fgw / PPT - tfLen; i--) {
+						drawBgTile(Backgrounds, i, -2, 7, 1);
+					}
+					drawBgTile(Backgrounds, fgw / PPT - tfLen, -2, 4, 1);
+					// Draw FLAG
+					drawBgTile(UI, fgw / PPT - tfLen, -2, 1, 1);
+					// Draw FLAG Border
+					for (const [x, y] of border(fgw / PPT - tfLen, -2, fgw / PPT, -1)) {
+						let ox = 3;
+						let oy = 9;
+						if (x === fgw / PPT - tfLen - 1) {
+							ox -= 1;
+						}
+						if (y === -3) {
+							oy -= 1;
+						}
+						if (x === fgw / PPT) {
+							ox += 1;
+						}
+						if (y === -1) {
+							oy += 1;
+						}
+						drawBgTile(UI, x, y, ox, oy);
+					}
+
+					// Draw FACE BG
+					drawBgTile(
+						Backgrounds,
+						tfLen + (fgw / PPT - tfLen * 2 - 1) / 2,
+						-2,
+						7,
+						1,
+					);
+					switch (gameStatus) {
+						case "GAMING":
+							// Draw SMILEY
+							drawBgTile(UI, tfLen + (fgw / PPT - tfLen * 2 - 1) / 2, -2, 3, 0);
+							break;
+						case "WIN":
+							// Draw CHECK
+							drawBgTile(UI, tfLen + (fgw / PPT - tfLen * 2 - 1) / 2, -2, 0, 0);
+							break;
+						case "LOSS":
+							// Draw CROSS
+							drawBgTile(UI, tfLen + (fgw / PPT - tfLen * 2 - 1) / 2, -2, 1, 0);
+							break;
+						default:
+							throw new Error("Unreachable");
+					}
+					// Draw FACE Border
+					for (const [x, y] of border(
+						tfLen + (fgw / PPT - tfLen * 2 - 1) / 2,
+						-2,
+						tfLen + (fgw / PPT - tfLen * 2 - 1) / 2 + 1,
+						-1,
+					)) {
+						let ox = 3;
+						let oy = 9;
+						if (x === tfLen + (fgw / PPT - tfLen * 2 - 1) / 2 - 1) {
+							ox -= 1;
+						}
+						if (y === -3) {
+							oy -= 1;
+						}
+						if (x === tfLen + (fgw / PPT - tfLen * 2 - 1) / 2 + 1) {
+							ox += 1;
+						}
+						if (y === -1) {
+							oy += 1;
+						}
+						drawBgTile(UI, x, y, ox, oy);
+					}
+
+					// Draw TIME Text
+					drawText(
+						timeDisplay.toString().padStart(Math.floor((tfLen - 1) * 1.5), "0"),
+						tfLen,
+						-2,
+						"right",
+					);
+
+					// Draw FLAG Text
+					drawText(
+						mineDisplay.toString().padStart(Math.floor((tfLen - 1) * 1.5), "0"),
+						fgw / PPT,
+						-2,
+						"right",
+					);
+				};
+				drawBg();
+
+				socket.on("update status", (data) => {
+					gameStatus = data.gameStatus;
+					if (gameStatus === "GAMING") {
+						timeDisplay = data.timeDisplay;
+						mineDisplay = data.mineDisplay;
+					}
+					if (gameStatus === "WIN" || gameStatus === "LOSS") {
+						overlayText.text(gameStatus === "WIN" ? "You Win ^_^" : "Game Over >_<");
+						overlayDescription.text("Click to continue...");
+						overlay.fadeIn();
+					}
+					drawBg();
+				});
+
+				socket.on("update board", ({ b, cs }) => {
+					board = b;
+					cs.forEach(([x, y]) => {
+						draw(x, y);
+					});
+				});
+
+				let prevFocusX = NaN;
+				let prevFocusY = NaN;
+				canvasBackground.on("mousemove", (event) => {
 					ctxCursor.imageSmoothingEnabled = false;
+					ctxCursor.clearRect(0, 0, fgw, fgh);
 					ctxCursor.drawImage(UI, 1 * 16, 4 * 16, 16, 16, 0, 0, 32, 32);
 
 					canvasCursor.css("left", `${event.clientX - 6}px`);
 					canvasCursor.css("top", `${event.clientY}px`);
 
-					const x = Math.floor(event.offsetX / PPT);
-					const y = Math.floor(event.offsetY / PPT);
+					const x = Math.floor((event.offsetX - bdl) / PPT);
+					const y = Math.floor((event.offsetY - bdt) / PPT);
 
 					if (x === prevFocusX && y === prevFocusY) {
 						return;
@@ -413,47 +753,45 @@
 
 					socket.emit("move", { x, y });
 				});
+
 				socket.on("move", ({ ui, x, y }) => {
+					console.log(`Player ${ui} moved to (${x}, ${y})`);
 					drawFocus(x, y, { n: ui });
 				});
 
-				let mdx = -1;
-				let mdy = -1;
-				let mdxx = -1;
-				let mdyy = -1;
-				canvas.addEventListener("mousedown", (event) => {
-					const x = Math.floor(event.offsetX / PPT);
-					const y = Math.floor(event.offsetY / PPT);
+				let mdx = NaN;
+				let mdy = NaN;
+				let mdxx = NaN;
+				let mdyy = NaN;
+				canvasBackground.on("mousedown", (event) => {
+					const x = Math.floor((event.offsetX - bdl) / PPT);
+					const y = Math.floor((event.offsetY - bdt) / PPT);
 
 					mdx = x;
 					mdy = y;
-					mdxx = event.offsetX / PPT;
-					mdyy = event.offsetY / PPT;
+					mdxx = (event.offsetX - bdl) / PPT;
+					mdyy = (event.offsetY - bdt) / PPT;
 
 					drawPress(x, y);
 				});
 
-				canvas.addEventListener("mouseup", (event) => {
-					const x = Math.floor(event.offsetX / PPT);
-					const y = Math.floor(event.offsetY / PPT);
+				canvasBackground.on("mouseup", (event) => {
+					const x = Math.floor((event.offsetX - bdl) / PPT);
+					const y = Math.floor((event.offsetY - bdt) / PPT);
 
 					drawPress(mdx, mdy, { clear: true });
 
-					if (x === mdx && y === mdy) {
+					if (x === mdx && y === mdy && x >= 0 && x < board.w && y >= 0 && y < board.h) {
 						if (event.button === 0) {
-							const x = Math.floor(event.offsetX / PPT);
-							const y = Math.floor(event.offsetY / PPT);
 							socket.emit("reveal", { x, y });
 						} else {
-							const x = Math.floor(event.offsetX / PPT);
-							const y = Math.floor(event.offsetY / PPT);
 							socket.emit("flag", { x, y });
 						}
 					}
 
 					if (x !== mdx || y !== mdy) {
-						const xx = event.offsetX / PPT;
-						const yy = event.offsetY / PPT;
+						const xx = (event.offsetX - bdl) / PPT;
+						const yy = (event.offsetY - bdt) / PPT;
 
 						// calculate the vector
 						const dx = xx - mdxx;
@@ -484,10 +822,10 @@
 				socket.on("signal", ({ type, x, y }) => {
 					console.log(`Received signal ${type} at (${x}, ${y})`);
 					const signalCanvas = $("<canvas></canvas>").attr({
-						class: "signal-canvas",
+						class: "canvas-signal",
 					});
-					signalCanvas.attr("width", canvas.width);
-					signalCanvas.attr("height", canvas.height);
+					signalCanvas.attr("width", bgw);
+					signalCanvas.attr("height", bgh);
 
 					canvasContainer.append(signalCanvas);
 
@@ -502,8 +840,8 @@
 								0 * 16,
 								16,
 								16,
-								(x - 0.5) * PPT,
-								(y - 0.5) * PPT,
+								(x - 0.5) * PPT + bdl,
+								(y - 0.5) * PPT + bdt,
 								PPT,
 								PPT,
 							);
@@ -515,8 +853,8 @@
 								0 * 16,
 								16,
 								16,
-								(x - 0.5) * PPT,
-								(y - 0.5) * PPT,
+								(x - 0.5) * PPT + bdl,
+								(y - 0.5) * PPT + bdt,
 								PPT,
 								PPT,
 							);
@@ -528,8 +866,8 @@
 								1 * 16,
 								16,
 								16,
-								(x - 0.5) * PPT,
-								(y - 0.5) * PPT,
+								(x - 0.5) * PPT + bdl,
+								(y - 0.5) * PPT + bdt,
 								PPT,
 								PPT,
 							);
@@ -541,8 +879,8 @@
 								0 * 16,
 								16,
 								16,
-								(x - 0.5) * PPT,
-								(y - 0.5) * PPT,
+								(x - 0.5) * PPT + bdl,
+								(y - 0.5) * PPT + bdt,
 								PPT,
 								PPT,
 							);
@@ -556,7 +894,8 @@
 					});
 				});
 
-				canvas.addEventListener("contextmenu", (event) => {
+				// context menu: prevent default
+				canvasBackground.on("contextmenu", (event) => {
 					event.preventDefault();
 				});
 				$("#game-container").on("contextmenu", (event) => {
@@ -564,13 +903,6 @@
 				});
 				$("body").on("contextmenu", (event) => {
 					event.preventDefault();
-				});
-			});
-
-			socket.on("update board", ({ b, cs }) => {
-				board = b;
-				cs.forEach(([x, y]) => {
-					draw(x, y);
 				});
 			});
 		});

@@ -252,4 +252,8 @@ export class Game {
 		return this.#board;
 	}
 
+	isInitial() {
+		return this.#initial;
+	}
+
 }
