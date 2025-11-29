@@ -1,7 +1,14 @@
 import { range, sampleSize } from "es-toolkit";
 import { Board, board, surrounding } from "./board.js";
 import { isAmbiguous } from "./solver.js";
-import { Tile, TileEmp, TileFlag, TileHidden, TileMin, TileNum } from "./tile.js";
+import {
+	Tile,
+	TileEmp,
+	TileFlag,
+	TileHidden,
+	TileMin,
+	TileNum,
+} from "./tile.js";
 
 /** @typedef {(b: Board, cs: [number, number][]) => void} Observer */
 
@@ -90,7 +97,9 @@ export class Game {
 		const coordinates = range(w * h).map((n) => [n % w, Math.floor(n / w)]);
 		/** @type {[number, number][]} */
 		const choosableCoordinates = coordinates.filter(
-			([x, y]) => !(x === sx && y === sy) && !surrounding(sx, sy).some(([xx, yy]) => xx === x && yy === y),
+			([x, y]) =>
+				!(x === sx && y === sy) &&
+				!surrounding(sx, sy).some(([xx, yy]) => xx === x && yy === y),
 		);
 		/** @type {[number, number][]} */
 		const mines = sampleSize(choosableCoordinates, c);
@@ -139,10 +148,10 @@ export class Game {
 
 	/**
 	 * Reveal the {@link Tile} at (x, y) so that it becomes visible. Throw {@link RangeError} if out of bounds.
-	 * Note that this function performs flood fill according to Minesweeper rules. 
-	 * 
+	 * Note that this function performs flood fill according to Minesweeper rules.
+	 *
 	 * In the first reveal, the board is initialized such that the tile at (x, y) is never a mine.
-	 * 
+	 *
 	 * @param {number} x
 	 * @param {number} y
 	 */
@@ -152,13 +161,12 @@ export class Game {
 			this.#initial = false;
 		}
 
-		const t = this.apply(x, y)
+		const t = this.apply(x, y);
 		if (t !== TileHidden && t !== TileFlag && t.t === TileNum && t.n > 0) {
 			// Reveal surrounding tiles if number of flags equals the number
 			const mines = surrounding(x, y)
 				.filter(([xx, yy]) => xx >= 0 && xx < this.w && yy >= 0 && yy < this.h)
-				.filter(([xx, yy]) => this.apply(xx, yy) === TileFlag)
-				.length;
+				.filter(([xx, yy]) => this.apply(xx, yy) === TileFlag).length;
 			if (mines === t.n) {
 				for (const [xx, yy] of surrounding(x, y)) {
 					if (xx < 0 || xx >= this.w || yy < 0 || yy >= this.h) continue;
@@ -177,8 +185,8 @@ export class Game {
 
 	/**
 	 * Flag or unflag the tile at (x, y).
-	 * @param {number} x 
-	 * @param {number} y 
+	 * @param {number} x
+	 * @param {number} y
 	 */
 	flag(x, y) {
 		this.#board.setFlag(x, y, !this.#board.hasFlag(x, y));
@@ -255,5 +263,4 @@ export class Game {
 	isInitial() {
 		return this.#initial;
 	}
-
 }

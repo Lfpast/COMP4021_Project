@@ -1,6 +1,5 @@
 /* 默认主题：Classic White */
-:root,
-[data-theme="classic_white"] {
+:root {
 	--bg: #f5f7fa;
 	--card: #ffffff;
 	--text: #2c3e50;
@@ -10,93 +9,25 @@
 	background: #f5f7fa;
 }
 
-[data-theme="desert"] {
-	--bg: #f4e4bc;
-	--card: #e4d4b4;
-	--accent: #cc8800;
-	--text: #333;
-	--border: #d4c4a4;
-	background: #f4e4bc;
-	color: #333;
-}
-
-/* Garden 花园主题（微软扫雷经典草地风格） */
-[data-theme="garden"] {
-	--bg: #8bc34a;
-	--card: rgba(255, 255, 255, 0.92);
-	--text: #2e7d32;
-	--accent: #689f38;
-	--border: #7cb342;
-	--shadow: rgba(104, 159, 56, 0.4);
-
-	background:
-		radial-gradient(circle at 20% 80%, #a0d468 0%, transparent 50%),
-		radial-gradient(circle at 80% 20%, #88c44a 0%, transparent 50%),
-		linear-gradient(135deg, #9ccc65 0%, #7cb342 100%);
-	background-attachment: fixed;
-	color: #33691e;
-}
-
 /* ====================== 统一所有主题的按钮立体渐变效果 ====================== */
 
 /* Classic 蓝色立体渐变 */
-[data-theme="classic"] .big-btn,
-[data-theme="classic"] #joinLobbyBtn,
-[data-theme="classic"] #copyRoomBtn,
-[data-theme="classic"] #startGameBtn {
+.big-btn,
+#joinLobbyBtn,
+#copyRoomBtn,
+#startGameBtn {
 	background: linear-gradient(to bottom, #66b3ff, #3498db);
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.4),
 		0 4px 12px rgba(0, 0, 0, 0.25);
 	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
-[data-theme="classic"] .big-btn:hover,
-[data-theme="classic"] #joinLobbyBtn:hover,
-[data-theme="classic"] #copyRoomBtn:hover {
+.big-btn:hover,
+#joinLobbyBtn:hover,
+#copyRoomBtn:hover {
 	background: linear-gradient(to bottom, #80bfff, #3498db);
 	transform: translateY(-2px);
 	box-shadow: 0 8px 20px rgba(52, 152, 219, 0.5);
-}
-
-/* Desert 橙色立体渐变 */
-[data-theme="desert"] .big-btn,
-[data-theme="desert"] #joinLobbyBtn,
-[data-theme="desert"] #copyRoomBtn,
-[data-theme="desert"] #startGameBtn {
-	background: linear-gradient(to bottom, #ffb74d, #cc8800);
-	box-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.4),
-		0 4px 12px rgba(0, 0, 0, 0.25);
-	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
-[data-theme="desert"] .big-btn:hover,
-[data-theme="desert"] #joinLobbyBtn:hover,
-[data-theme="desert"] #copyRoomBtn:hover {
-	background: linear-gradient(to bottom, #ffca75, #e69500);
-	transform: translateY(-2px);
-	box-shadow: 0 8px 20px rgba(204, 136, 0, 0.5);
-}
-
-/* Garden 绿色立体渐变（原版微软风格） */
-[data-theme="garden"] .big-btn,
-[data-theme="garden"] #startGameBtn,
-[data-theme="garden"] #joinLobbyBtn,
-[data-theme="garden"] #copyRoomBtn {
-	background: linear-gradient(to bottom, #9ccc65, #7cb342);
-	color: white;
-	font-weight: bold;
-	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-	box-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.4),
-		0 4px 12px rgba(104, 159, 56, 0.3);
-}
-[data-theme="garden"] .big-btn:hover,
-[data-theme="garden"] #startGameBtn:hover,
-[data-theme="garden"] #joinLobbyBtn:hover,
-[data-theme="garden"] #copyRoomBtn:hover {
-	background: linear-gradient(to bottom, #aed581, #8bc34a);
-	transform: translateY(-2px);
-	box-shadow: 0 8px 20px rgba(139, 195, 74, 0.5);
 }
 
 body {
@@ -195,7 +126,7 @@ body {
 
 /* Custom input invalid state */
 .custom-invalid {
-	border: 2px solid #e74c3c !important;
+	border: 2px solid #e74c3c;
 	box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.08);
 }
 
@@ -278,7 +209,6 @@ th {
 	border-bottom: 1px solid #eee;
 	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 	margin-bottom: 20px;
-	position: relative;
 }
 .header h1 {
 	margin: 0;
@@ -287,29 +217,6 @@ th {
 }
 
 /* Gameplay Settings 样式 */
-.gameplay-settings {
-	margin-top: 16px;
-	display: flex;
-	flex-direction: column;
-	gap: 18px;
-}
-
-.setting-item {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	font-size: 15px;
-	user-select: none;
-}
-
-.setting-item input[type="checkbox"] {
-	width: 20px;
-	height: 20px;
-	margin: 0;
-	cursor: pointer;
-	accent-color: var(--accent);
-}
-
 .volume-control {
 	display: flex;
 	align-items: center;
@@ -322,7 +229,6 @@ th {
 	border-radius: 4px;
 	background: #ddd;
 	outline: none;
-	-webkit-appearance: none;
 }
 
 #volumeSlider::-webkit-slider-thumb {
@@ -341,7 +247,7 @@ th {
 }
 
 #roomInfo {
-	background: rgba(0, 0, 0, 0.05) !important;
+	background: rgba(0, 0, 0, 0.05);
 	border-radius: 12px;
 }
 
@@ -352,7 +258,7 @@ th {
 
 /* 让 Join Room 按钮在所有主题下都好看 */
 #joinLobbyBtn {
-	padding: 12px 24px !important;
+	padding: 12px 24px;
 	border-radius: 10px;
 	font-weight: bold;
 }
@@ -364,208 +270,12 @@ th {
 	border: 2px solid #a5d6a7;
 }
 
-/* Game Page Specific Styles */
-#gamePage {
-	min-height: 100vh;
-	background: var(--bg);
-	overflow-y: auto; /* 允许滚动，防止大棋盘显示不全 */
-}
-
-/* Ensure lobby container is vertically centered below header */
-#mainPage .container {
-	min-height: calc(100vh - 120px);
-	align-items: center;
-}
-
-.game-container {
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	padding: 20px;
-	gap: 30px;
-	margin-top: 20px;
-	min-height: 85vh;
-	box-sizing: border-box;
-}
-
-#boardCanvas {
-	display: block;
-	background: #bbbbbb;
-	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-	border-radius: 8px;
-
-	/* 关键：控制大小为屏幕的一半左右，保持比例 */
-	width: auto;
-	height: auto;
-	/* max-width: 75vw;
-  max-height: 85vh;
-  object-fit: contain; */
-}
-
-.game-info {
-	/* 让右侧信息栏高度自适应，不要撑满 */
-	height: fit-content;
-	/* ...原有其他样式保持不变... */
-	display: flex;
-	flex-direction: column;
-	gap: 15px;
-	width: 30%;
-	max-width: 300px;
-	background: var(--card);
-	padding: 15px;
-	border-radius: 12px;
-	box-shadow: var(--shadow);
-}
-
-#timerDisplay {
-	font-size: 18px;
-	font-weight: bold;
-}
-
-#cheatBtn {
-	display: none;
-}
-
-#overModal .modal-content {
-	text-align: center;
-}
-
-/* Ensure game-over modal buttons are equal width and evenly spaced */
-.modal .btn-group {
-	display: flex;
-	flex-direction: column; /* stack vertically; change to row if you want side-by-side */
-	gap: 12px;
-	margin-top: 20px;
-	align-items: stretch;
-}
-.modal .btn-group .big-btn {
-	flex: none; /* don't let flex grow; use width to keep consistent */
-	width: 100%;
-	padding: 14px 18px;
-	font-size: 18px;
-	border-radius: 12px;
-	box-sizing: border-box; /* ensure padding included in width so both sizes match precisely */
-	display: inline-block; /* consistent rendering */
-	line-height: 1.4; /* keep consistent line-height */
-}
-
-/* Explicitly make the two modal buttons identical by id */
-#overBackToLobbyBtn,
-#startNewGameBtn {
-	padding: 14px 18px !important;
-	font-size: 18px !important;
-	border-radius: 12px !important;
-	width: 100% !important;
-	box-sizing: border-box !important;
-	display: inline-block !important;
-}
-
-#overTitle {
-	color: var(--accent);
-	font-size: 32px;
-}
-
-#overMessage {
-	font-size: 18px;
-	margin: 10px 0;
-}
-
-#overStats table {
-	margin: auto;
-}
-
-#rankingsTable table {
-	margin: auto;
-	width: 100%;
-}
-
-#restartOverBtn,
-#backToLobbyBtn {
-	padding: 12px 24px;
-	margin-top: 20px;
-}
-
-#personalStats {
-	background: rgba(255, 255, 255, 0.1);
-	border-radius: 12px;
-	padding: 16px;
-	backdrop-filter: blur(10px);
-	margin-top: 20px;
-}
-
-.stat-row {
-	display: flex;
-	justify-content: space-between;
-	margin: 12px 0;
-	font-size: 15px;
-}
-
-.stat-label {
-	color: #aaa;
-}
-
-.stat-value {
-	color: #000000;
-	font-weight: bold;
-	min-width: 80px;
-	text-align: right;
-}
-
-.container {
-	display: flex;
-	justify-content: space-between;
-	gap: 30px;
-	padding: 20px;
-	max-width: 1400px;
-	margin: 0 auto;
-	padding-top: 20px;
-}
-
-.left-panel,
-.right-panel {
-	background: rgba(255, 255, 255, 0.1);
-	padding: 20px;
-	border-radius: 16px;
-	backdrop-filter: blur(10px);
-	/* flex: 1; */
-	width: 50%;
-	max-width: 50%;
-	box-sizing: border-box;
-}
-
-/* .right-panel {
-  min-width: 300px;
-  max-width: 360px;
-} */
-
-[data-theme="desert"] {
-	--bg: #f4e4bc;
-	--card: #e4d4b4;
-	--accent: #cc8800;
-	--text: #333;
-	--border: #d4c4a4;
-	background: #f4e4bc;
-}
-
-[data-theme="garden"] {
-	--bg: #8bc34a;
-	--card: rgba(255, 255, 255, 0.92);
-	--text: #2e7d32;
-	--accent: #689f38;
-	background: linear-gradient(135deg, #9ccc65 0%, #7cb342 100%);
-}
+/* Game Page Specific Styles - REMOVED */
 
 #volumeValue {
 	margin-left: 10px;
 	min-width: 40px;
 	font-weight: bold;
-}
-
-/* 强制所有主题下的按钮都重新定义背景 */
-[data-theme="garden"] .big-btn,
-[data-theme="desert"] .big-btn,
-[data-theme="classic"] .big-btn {
-	background: var(--accent) !important; /* 强制使用当前主题的 accent */
 }
 
 .players-list li.me {
@@ -582,9 +292,9 @@ th {
 	display: flex;
 	flex-direction: row;
 	gap: 30px;
-	max-width: 700px !important; /* Wider modal */
+	max-width: 700px; /* Wider modal */
 	width: 90%;
-	padding-bottom: 50px !important; /* Space for msg */
+	padding-bottom: 50px; /* Space for msg */
 	position: relative;
 	align-items: stretch;
 }
@@ -683,11 +393,11 @@ th {
 	background: #bbb;
 }
 .header .big-btn {
-	width: auto !important; /* prevent full width; keep compact in header */
-	padding: 8px 14px !important;
-	font-size: 15px !important;
-	border-radius: 10px !important;
-	height: 36px !important;
+	width: auto; /* prevent full width; keep compact in header */
+	padding: 8px 14px;
+	font-size: 15px;
+	border-radius: 10px;
+	height: 36px;
 	align-self: center;
 }
 
@@ -713,7 +423,7 @@ th {
 }
 /* Hide the side menu toggle during login modal (inline style 'display:flex') as an extra fallback */
 #loginModal[style*="display: flex"] ~ #sideMenuToggle {
-	display: none !important;
+	display: none;
 }
 .side-menu {
 	position: fixed;

@@ -1,13 +1,13 @@
+import fs, { write } from "node:fs";
 import { createServer } from "node:http";
+import bcrypt from "bcryptjs";
 import { shuffle } from "es-toolkit";
 import express from "express";
+import session from "express-session";
 import { Server } from "socket.io";
 import { board } from "./core/board.js";
 import { Game } from "./core/game.js";
 import { TileFlag } from "./core/tile.js";
-import fs from "node:fs";
-import bcrypt from "bcryptjs";
-import session from "express-session";
 
 const app = express();
 const httpServer = createServer(app);
@@ -22,7 +22,6 @@ const io = new Server(httpServer, {
 
 // Serve static files (optional, if serving client from same server)
 app.use(express.static("public"));
-app.use(express.static("core"));
 app.use(express.json());
 const userSession = session({
 	secret: "user",
@@ -32,7 +31,6 @@ const userSession = session({
 	cookie: { maxAge: 300000 },
 });
 app.use(userSession);
-
 
 // ============
 // === Game ===
@@ -50,7 +48,6 @@ const userIndices = new Map();
  * @type {Map<string, number>}
  */
 const gameEpoch = new Map();
-
 
 io.on("connection", (socket) => {
 	const user = socket.handshake.query.user;
@@ -188,16 +185,11 @@ io.on("connection", (socket) => {
 	});
 });
 
-
 // =============
 // === Lobby ===
 // =============
 
-const Modes = [
-	"simple",
-	"medium",
-	"expert",
-]
+const Modes = ["simple", "medium", "expert"];
 
 /**
  * @type {Record<string, {
@@ -225,7 +217,7 @@ io.of("/lobby").on("connection", (socket) => {
 		return;
 	}
 
-	console.log(`[${socket.id}] Player ${player} connected to lobby.`);
+	console.log(`[${socket.id}] Player ${player} connected.`);
 
 	socket.emit("update lobbies", { lobbies });
 
@@ -243,7 +235,7 @@ io.of("/lobby").on("connection", (socket) => {
 			}
 		});
 		console.log(
-			`[${socket.id}] Player ${player} from lobby (Reason: ${reason})`,
+			`[${socket.id}] Player ${player} disconnected (Reason: ${reason}).`,
 		);
 	});
 
@@ -258,7 +250,7 @@ io.of("/lobby").on("connection", (socket) => {
 			c,
 		};
 		socket.emit("create lobby", { game });
-		io.emit("update lobbies", { lobbies });
+		io.of("/lobby").emit("update lobbies", { lobbies });
 		console.log(
 			`[${socket.id}] Player ${player} create lobby ${game} (${name}).`,
 		);
@@ -280,13 +272,14 @@ io.of("/lobby").on("connection", (socket) => {
 		}
 
 		socket.join(game);
-		io.to(game).emit("user join", lobby);
+		io.of("/lobby").emit("update lobbies", { lobbies });
+		io.of("/lobby").to(game).emit("user join", lobby);
 		console.log(
 			`[${socket.id}] Player ${player} join lobby ${game} (${lobby.name}).`,
 		);
 	});
 
-	socket.on("launch", ({ game }) => {
+	socket.on("launch game", ({ game }) => {
 		const lobby = lobbies[game];
 		if (!lobby) {
 			socket.emit("error", { message: "Lobby not found." });
@@ -295,13 +288,12 @@ io.of("/lobby").on("connection", (socket) => {
 
 		rooms.set(game, new Game(lobby.w, lobby.h, lobby.c));
 
-		io.to(game).emit("launch", { game });
+		io.of("/lobby").to(game).emit("launch game", { game });
 		console.log(
 			`[${socket.id}] Player ${player} launch game in lobby ${game} (${lobby.name}).`,
 		);
 	});
 });
-
 
 // =============
 // === Login ===
@@ -319,12 +311,13 @@ io.of("/lobby").on("connection", (socket) => {
  * @returns {Record<string, User>}
  */
 function readUsers() {
+	if (!fs.existsSync("users.json")) writeUsers({});
 	const data = fs.readFileSync("users.json", "utf-8");
-	return JSON.parse(data || "{}");
+	return JSON.parse(data);
 }
 
 /**
- * @param {Record<string, User>} users 
+ * @param {Record<string, User>} users
  */
 function writeUsers(users) {
 	fs.writeFileSync("users.json", JSON.stringify(users, null, 2), "utf-8");
@@ -348,10 +341,7 @@ app.post("/register", async (req, res) => {
 		name: name,
 		password: passwordHash,
 		stats: Object.fromEntries(
-			Modes.map((mode) => [
-				mode,
-				{ games: 0, wins: 0, best: null },
-			]),
+			Modes.map((mode) => [mode, { games: 0, wins: 0, best: null }]),
 		),
 	};
 
@@ -368,18 +358,18 @@ app.post("/login", (req, res) => {
 		return res.json({ success: false, msg: "User does not exist" });
 	}
 
-	if (!(bcrypt.compareSync(password, user.password))) {
+	if (!bcrypt.compareSync(password, user.password)) {
 		return res.json({ success: false, msg: "Incorrect username or password" });
 	}
 
-	// @ts-expect-error  
-	req.session.user = user;
+	// @ts-expect-error
+	req.session.user = { ...user, username };
 
-	res.json({ success: true, user });
+	res.json({ success: true, user: { ...user, username } });
 });
 
 app.post("/verify", (req, res) => {
-	// @ts-expect-error  
+	// @ts-expect-error
 	const { user } = req.session;
 	if (user) {
 		return res.json({ success: true, user });
@@ -387,7 +377,6 @@ app.post("/verify", (req, res) => {
 		return res.json({ success: false });
 	}
 });
-
 
 // ==============
 // === Others ===

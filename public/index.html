@@ -1,194 +1,275 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multisweeper</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="/socket.io/socket.io.js"></script>
-</head>
-<body>
-  <!-- Login / Registration Modal -->
-  <div id="loginModal" class="modal">
-    <div class="modal-content login-split-container">
-      <div class="login-section">
-        <h2>Register</h2>
-        <input type="text" id="regUsername" placeholder="Username" autocomplete="off">
-        <input type="text" id="regNickname" placeholder="Nickname" autocomplete="off">
-        <input type="password" id="regPassword" placeholder="Password" autocomplete="off">
-        <button id="registerBtn" type="button" class="big-btn" onclick="handleRegister()">Register</button>
-      </div>
-      <div class="login-divider"></div>
-      <div class="login-section">
-        <h2>Login</h2>
-        <input type="text" id="loginUsername" placeholder="Username" autocomplete="off">
-        <input type="password" id="loginPassword" placeholder="Password" autocomplete="off">
-        <button id="loginBtn" type="button" class="big-btn" onclick="handleLogin()">Login</button>
-      </div>
-      
-      <p id="loginMsg" style="position:absolute; bottom:15px; left:0; right:0; margin:0; font-weight:bold; opacity:0; transition:opacity 0.5s;"></p>
-    </div>
-  </div>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Multisweeper</title>
+		<link rel="stylesheet" href="style.css">
+		<script
+			src="https://code.jquery.com/jquery-3.7.1.min.js"
+			crossorigin="anonymous"
+		></script>
+		<script
+			src="https://cdn.socket.io/4.8.1/socket.io.min.js"
+			integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+"
+			crossorigin="anonymous"
+		></script>
+	</head>
+	<body>
+		<!-- Login / Registration Modal -->
+		<div id="loginModal" class="modal">
+			<div class="modal-content login-split-container">
+				<div class="login-section">
+					<h2>Register</h2>
+					<input
+						type="text"
+						id="regUsername"
+						placeholder="Username"
+						autocomplete="off"
+					>
+					<input
+						type="text"
+						id="regNickname"
+						placeholder="Nickname"
+						autocomplete="off"
+					>
+					<input
+						type="password"
+						id="regPassword"
+						placeholder="Password"
+						autocomplete="off"
+					>
+					<input
+						type="password"
+						id="regConfirmPassword"
+						placeholder="Confirm Password"
+						autocomplete="off"
+					>
+					<button
+						id="registerBtn"
+						type="button"
+						class="big-btn"
+						onclick="handleRegister()"
+					>
+						Register
+					</button>
+				</div>
+				<div class="login-divider"></div>
+				<div class="login-section">
+					<h2>Login</h2>
+					<input
+						type="text"
+						id="loginUsername"
+						placeholder="Username"
+						autocomplete="off"
+					>
+					<input
+						type="password"
+						id="loginPassword"
+						placeholder="Password"
+						autocomplete="off"
+					>
+					<button
+						id="loginBtn"
+						type="button"
+						class="big-btn"
+						onclick="handleLogin()"
+					>
+						Login
+					</button>
+				</div>
 
-  <!-- Main Lobby Page -->
-  <div id="mainPage" style="display:none">
-    <div class="header">
-    <h1>Multisweeper</h1>
-    <button id="logoutBtn" class="big-btn">Logout</button>
-      <!-- side menu toggle injected in side-menu partial -->
-    </div>
+				<p
+					id="loginMsg"
+					style="position:absolute; bottom:15px; left:0; right:0; margin:0; font-weight:bold; opacity:0; transition:opacity 0.5s;"
+				></p>
+			</div>
+		</div>
 
-    <div class="container">
-      <!-- Left Panel -->
-      <div class="left-panel">
-        <h2>Welcome, <span id="welcomeUser"></span>!</h2>
+		<!-- Main Lobby Page -->
+		<div id="mainPage" style="display:none">
+			<div class="header">
+				<h1>Multisweeper</h1>
+				<button id="logoutBtn" class="big-btn">Logout</button>
+				<!-- side menu toggle injected in side-menu partial -->
+			</div>
 
-        <h3 style="margin:20px 0 10px;">Join a Room</h3>
-        
-        <div id="lobbyListContainer" class="lobby-list">
-            <div style="padding:10px; color:#888; text-align:center;">Loading oms...</div>
-        </div>
+			<div class="container">
+				<!-- Left Panel -->
+				<div class="left-panel">
+					<h2>
+						Welcome, <span id="welcomeUser"></span>!
+					</h2>
 
-        <div class="join-box" style="margin-bottom:25px;">
-          <input type="text" id="roomInput" placeholder="Enter Room ID">
-          <button id="joinLobbyBtn">Join Room</button>
-        </div>
+					<h3 style="margin:20px 0 10px;">Join a Room</h3>
 
-        <h3 style="margin:20px 0 10px;">Or Create New Room</h3>
-        <input type="text" id="roomNameInput" placeholder="Room Name (optional)">
-        <button id="createLobbyBtn" class="big-btn">Create Room</button>
+					<div id="lobbyListContainer" class="lobby-list">
+						<div style="padding:10px; color:#888; text-align:center;">
+							Loading rooms...
+						</div>
+					</div>
 
-        <div id="hostControls" style="display:none; margin-top:25px;">
-          <h3>Game Mode</h3>
-          <select id="modeSelect">
-            <option value="simple">Simple (9×9, 10 mines)</option>
-            <option value="medium">Medium (16×16, 40 mines)</option>
-            <option value="expert">Expert (30×16, 99 mines)</option>
-            <option value="custom">Custom</option>
-          </select>
-          <div id="customParams" style="display:none; margin-top:12px; gap:8px;">
-            <label style="display:block; font-weight:600; margin-bottom:8px;">Custom Board</label>
-            <div style="display:flex; gap:8px;">
-              <input id="customW" type="number" min="5" max="50" step="1" placeholder="Width (min 5)" style="flex:1; padding:8px; border-radius:8px;">
-              <input id="customH" type="number" min="5" max="30" step="1" placeholder="Height (min 5)" style="flex:1; padding:8px; border-radius:8px;">
-            </div>
-            <div style="display:flex; gap:8px; margin-top:8px; align-items:center;">
-              <input id="customM" type="number" min="1" step="1" placeholder="Mines" style="flex:1; padding:8px; border-radius:8px;">
-              <div id="customHint" style="font-size:12px; color:#666;">Mines max = W × H - 1</div>
-            </div>
-          </div>
-          <button id="startGameBtn" class="big-btn" style="margin-top:12px;">Start Game</button>
-          <button id="deleteRoomBtn" class="big-btn" style="margin-top:12px; background: linear-gradient(to bottom, #ff6b6b, #c0392b) !important;">Delete Room</button>
-        </div>
+					<div class="join-box" style="margin-bottom:25px;">
+						<input type="text" id="roomInput" placeholder="Enter Room ID">
+						<button id="joinLobbyBtn">Join Room</button>
+					</div>
 
-        <div id="roomInfo" style="display:none; margin-top:25px; padding:18px; background:rgba(0,0,0,0.06); border-radius:12px;">
-          <div style="margin-bottom:12px;">
-            <div style="margin-bottom:8px;"><strong>Room Name:</strong> <span id="currentRoomName" style="color:var(--accent); font-weight:bold; font-size:18px;"></span></div>
-            <div><strong>Room ID:</strong> 
-              <span id="currentRoomId" style="font-family:monospace; background:#0001; padding:4px 8px; border-radius:6px;"></span>
-              <button id="copyRoomBtn" style="margin-left:10px; padding:4px 10px; font-size:13px;">Copy ID</button>
-            </div>
-          </div>
-          <p style="margin:15px 0 8px 0; font-weight:600;">Players:</p>
-          <ul id="playersList" style="margin:0; padding-left:20px;"></ul>
-        </div>
-      </div>
+					<h3 style="margin:20px 0 10px;">Or Create New Room</h3>
+					<input
+						type="text"
+						id="roomNameInput"
+						placeholder="Room Name (optional)"
+					>
+					
+					<div style="margin: 15px 0;">
+						<label style="font-weight:600; display:block; margin-bottom:5px;">Game Mode</label>
+						<select id="modeSelect">
+							<option value="simple">Simple (9×9, 10 mines)</option>
+							<option value="medium">Medium (16×16, 40 mines)</option>
+							<option value="expert">Expert (30×16, 99 mines)</option>
+							<option value="custom">Custom</option>
+						</select>
+						
+						<div
+							id="customParams"
+							style="display:none; margin-top:12px; gap:8px;"
+						>
+							<label style="display:block; font-weight:600; margin-bottom:8px;">
+								Custom Board
+							</label>
+							<div style="display:flex; gap:8px;">
+								<input
+									id="customW"
+									type="number"
+									min="5"
+									max="50"
+									step="1"
+									placeholder="Width (min 5)"
+									style="flex:1; padding:8px; border-radius:8px;"
+								>
+								<input
+									id="customH"
+									type="number"
+									min="5"
+									max="30"
+									step="1"
+									placeholder="Height (min 5)"
+									style="flex:1; padding:8px; border-radius:8px;"
+								>
+							</div>
+							<div
+								style="display:flex; gap:8px; margin-top:8px; align-items:center;"
+							>
+								<input
+									id="customM"
+									type="number"
+									min="1"
+									step="1"
+									placeholder="Mines"
+									style="flex:1; padding:8px; border-radius:8px;"
+								>
+								<div id="customHint" style="font-size:12px; color:#666;">
+									Mines max = W × H - 1
+								</div>
+							</div>
+						</div>
+					</div>
 
-      <!-- Right Panel -->
-      <div class="right-panel">
-        <div id="personalStats">
-          <h3>Personal Statistics</h3>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; justify-content:center;">
-            <label for="statsModeSelect" style="font-weight:600;">Mode</label>
-            <select id="statsModeSelect" style="padding:8px; border-radius:8px;">
-              <option value="classic">Classic</option>
-              <option value="simple">Simple</option>
-              <option value="medium">Medium</option>
-              <option value="expert">Expert</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
-  
-          <div class="stat-row">
-            <span class="stat-label">Games Played</span>
-            <span id="statGamesPlayed" class="stat-value">0</span>
-          </div>
-  
-          <div class="stat-row">
-            <span class="stat-label">Games Won</span>
-            <span id="statGamesWon" class="stat-value">0</span>
-          </div>
-  
-          <div class="stat-row">
-            <span class="stat-label">Win Rate</span>
-            <span id="statWinRate" class="stat-value">0%</span>
-          </div>
-  
-          <div class="stat-row">
-            <span class="stat-label">Best Time</span>
-            <span id="statBestTime" class="stat-value">--:--</span>
-          </div>
-  
-          <!-- Total Play Time removed per request -->
-        </div>
+					<button id="createLobbyBtn" class="big-btn">Create Room</button>
 
-        <h3 style="margin-top: 32px;">Settings</h3>
-        <div class="setting-item">
-          <span class="setting-text">Theme</span>
-          <select id="themeSelect">
-            <option value="classic">Classic White</option>
-            <option value="desert">Desert</option>
-            <option value="garden">Garden</option>
-          </select>
-        </div>
+					<div id="hostControls" style="display:none; margin-top:25px;">
+						<button id="startGameBtn" class="big-btn" style="margin-top:12px;">
+							Start Game
+						</button>
+					</div>
 
-        <!-- Gameplay Settings removed from Lobby - managed via Side Menu -->
-      </div>
-    </div>
-  </div>
+					<div
+						id="roomInfo"
+						style="display:none; margin-top:25px; padding:18px; background:rgba(0,0,0,0.06); border-radius:12px;"
+					>
+						<div style="margin-bottom:12px;">
+							<div style="margin-bottom:8px;">
+								<strong>Room Name:</strong>
+								<span
+									id="currentRoomName"
+									style="color:var(--accent); font-weight:bold; font-size:18px;"
+								></span>
+							</div>
+							<div>
+								<strong>Room ID:</strong>
+								<span
+									id="currentRoomId"
+									style="font-family:monospace; background:#0001; padding:4px 8px; border-radius:6px;"
+								></span>
+								<button
+									id="copyRoomBtn"
+									style="margin-left:10px; padding:4px 10px; font-size:13px;"
+								>
+									Copy ID
+								</button>
+							</div>
+						</div>
+						<p style="margin:15px 0 8px 0; font-weight:600;">Players:</p>
+						<ul id="playersList" style="margin:0; padding-left:20px;"></ul>
+					</div>
+				</div>
 
-  <!-- Game Page -->
-  <div id="gamePage" style="display:none; height:100vh; position:relative;">
-    <div class="header">
-      <h1>Multisweeper - Game</h1>
-    </div>
+				<!-- Right Panel -->
+				<div class="right-panel">
+					<div id="personalStats">
+						<h3>Personal Statistics</h3>
+						<div
+							style="display:flex; align-items:center; gap:8px; margin-bottom:12px; justify-content:center;"
+						>
+							<label for="statsModeSelect" style="font-weight:600;">Mode</label>
+							<select
+								id="statsModeSelect"
+								style="padding:8px; border-radius:8px;"
+							>
+								<option value="classic">Classic</option>
+								<option value="simple">Simple</option>
+								<option value="medium">Medium</option>
+								<option value="expert">Expert</option>
+								<option value="custom">Custom</option>
+							</select>
+						</div>
 
-    <div class="game-container">
-      <canvas id="boardCanvas"></canvas>
+						<div class="stat-row">
+							<span class="stat-label">Games Played</span>
+							<span id="statGamesPlayed" class="stat-value">0</span>
+						</div>
 
-      <div class="game-info">
-        <h3>Game Info</h3>
-        <p><strong>Room Name:</strong> <span id="gameRoomName"></span></p>
-        <p><strong>Room ID:</strong> <span id="gameRoomID"></span> <button id="copyGameRoomBtn">Copy</button></p>
-  
-        <p><strong>Mines Remaining:</strong> <span id="minesLeft">0</span></p>
-        <p id="timerDisplay" style="display:none;"><strong>Time:</strong> <span id="gameTimer">00:00</span></p>
-  
-        <p><strong>Players:</strong></p>
-        <ul id="gamePlayersList">
-        </ul>
-  
-        <!-- Cheat button removed until new implementation is decided -->
-      </div>
-    </div>
+						<div class="stat-row">
+							<span class="stat-label">Games Won</span>
+							<span id="statGamesWon" class="stat-value">0</span>
+						</div>
 
-    <!-- Game Over Modal -->
-    <div id="overModal" class="modal" style="display:none;">
-      <div class="modal-content" style="max-width:520px;">
-        <h2 id="overTitle">Game Over!</h2>
-        <p id="overMessage"></p>
-        <div id="overStats" style="margin:20px 0;"></div>
-        <div class="btn-group">
-          <button id="startNewGameBtn" class="big-btn" style="background:#2ecc71; display:none;">Start New Game</button>
-          <button id="overBackToLobbyBtn" class="big-btn">Back to Lobby</button>
-        </div>
-      </div>
-    </div>
+						<div class="stat-row">
+							<span class="stat-label">Win Rate</span>
+							<span id="statWinRate" class="stat-value">0%</span>
+						</div>
 
-  </div>
+						<div class="stat-row">
+							<span class="stat-label">Best Time</span>
+							<span id="statBestTime" class="stat-value">--:--</span>
+						</div>
 
-  <script src="front.js"></script>
-  <!-- Side menu partial -->
-  <script>fetch('side-menu.html').then(r => r.text()).then(t => document.body.insertAdjacentHTML('beforeend', t));</script>
-</body>
+						<!-- Total Play Time removed per request -->
+					</div>
+
+					<!-- Gameplay Settings removed from Lobby - managed via Side Menu -->
+				</div>
+			</div>
+		</div>
+
+		<!-- Game Page removed -->
+
+		<script src="front.js"></script>
+		<!-- Side menu partial -->
+		<script>
+		fetch("side-menu.html")
+			.then((r) => r.text())
+			.then((t) => document.body.insertAdjacentHTML("beforeend", t));
+		</script>
+	</body>
 </html>

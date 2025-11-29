@@ -1,0 +1,44 @@
+{
+  "flandia": {
+    "name": "Flandia",
+    "password": "$2a$10$SXZkbgGwhhh/nXS2Y8FvAuijKWJ5t54NzcKUEZhmxbn1NG3pXaV8G",
+    "stats": {
+      "simple": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      },
+      "medium": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      },
+      "expert": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      }
+    }
+  },
+  "foo": {
+    "name": "Foo",
+    "password": "$2a$10$RckLd5baaAmtFLpNSPcGKeJoNwYQ59kgdjGay6/dkVShWCQb4QwM.",
+    "stats": {
+      "simple": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      },
+      "medium": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      },
+      "expert": {
+        "games": 0,
+        "wins": 0,
+        "best": null
+      }
+    }
+  }
+}

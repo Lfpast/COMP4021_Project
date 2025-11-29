@@ -84,7 +84,7 @@
 			align-items: center;
 			z-index: 10;
 
-			font-family: 'Tomorrow Night', monospace;
+			font-family: "Tomorrow Night", monospace;
 			color: white;
 
 			text-shadow: 2px 2px 0px black;
@@ -127,25 +127,14 @@
 		</style>
 	</head>
 	<body>
-		<div id="controls">
-			<form id="join-form">
-				<input type="text" id="user" placeholder="Username" required>
-				<input type="text" id="room" placeholder="Room ID" required>
-				<button type="submit">Join Game</button>
-			</form>
-		</div>
 		<div id="game-container">
 			<div id="canvas-container" style="width: 640px; height: 768px;">
 				<canvas id="canvas-background" width="640" height="768"></canvas>
 				<canvas id="canvas" width="512" height="512"></canvas>
 				<canvas id="canvas-press" width="512" height="512"></canvas>
 				<div id="overlay">
-					<div id="overlay-text">
-						Joining Game...
-					</div>
-					<div id="overlay-description">
-						Please Wait
-					</div>
+					<div id="overlay-text">Joining Game...</div>
+					<div id="overlay-description">Please Wait</div>
 				</div>
 			</div>
 		</div>
@@ -198,41 +187,69 @@
 			canvasContainer.append(c);
 		}
 
-		const form = $("#join-form");
-		const userInput = $("#user");
-		const roomInput = $("#room");
-
 		const TomorrowNight = new FontFace(
 			"Tomorrow Night",
 			'url("./assets/Tomorrow_Night.ttf") format("truetype")',
 		);
-		TomorrowNight.load().then((font) => {
+		const pFont = TomorrowNight.load().then((font) => {
 			document.fonts.add(font);
 		});
 
 		const Cells = new Image();
+		const pCells = new Promise((r) => {
+			Cells.onload = r;
+		});
 		Cells.src = "./assets/Cells.png";
 
 		const Grids = new Image();
+		const pGrids = new Promise((r) => {
+			Grids.onload = r;
+		});
 		Grids.src = "./assets/Grids.png";
 
 		const UI = new Image();
+		const pUI = new Promise((r) => {
+			UI.onload = r;
+		});
 		UI.src = "./assets/UI.png";
 
 		const Players = new Image();
+		const pPlayers = new Promise((r) => {
+			Players.onload = r;
+		});
 		Players.src = "./assets/Players.png";
 
 		const Backgrounds = new Image();
+		const pBackgrounds = new Promise((r) => {
+			Backgrounds.onload = r;
+		});
 		Backgrounds.src = "./assets/Backgrounds.png";
 
 		const Borders = new Image();
+		const pBorders = new Promise((r) => {
+			Borders.onload = r;
+		});
 		Borders.src = "./assets/Borders.png";
 
-		form.on("submit", (e) => {
-			e.preventDefault();
-			const user = userInput.val();
-			const room = roomInput.val();
+		// Auto-join if params exist
+		const urlParams = new URLSearchParams(window.location.search);
+		const user = urlParams.get("user");
+		const room = urlParams.get("room");
 
+		if (!user || !room) {
+			alert("Invalid game parameters. Returning to lobby.");
+			window.location.href = "/";
+		}
+
+		Promise.all([
+			pFont,
+			pCells,
+			pGrids,
+			pUI,
+			pPlayers,
+			pBackgrounds,
+			pBorders,
+		]).then(() => {
 			const socket = io({
 				query: {
 					user,
@@ -717,7 +734,9 @@
 						mineDisplay = data.mineDisplay;
 					}
 					if (gameStatus === "WIN" || gameStatus === "LOSS") {
-						overlayText.text(gameStatus === "WIN" ? "You Win ^_^" : "Game Over >_<");
+						overlayText.text(
+							gameStatus === "WIN" ? "You Win ^_^" : "Game Over >_<",
+						);
 						overlayDescription.text("Click to continue...");
 						overlay.fadeIn();
 					}
@@ -781,7 +800,14 @@
 
 					drawPress(mdx, mdy, { clear: true });
 
-					if (x === mdx && y === mdy && x >= 0 && x < board.w && y >= 0 && y < board.h) {
+					if (
+						x === mdx &&
+						y === mdy &&
+						x >= 0 &&
+						x < board.w &&
+						y >= 0 &&
+						y < board.h
+					) {
 						if (event.button === 0) {
 							socket.emit("reveal", { x, y });
 						} else {

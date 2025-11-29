@@ -169,8 +169,8 @@ export class Board {
 
 	/**
 	 * Check if the {@link Tile} at (x, y) has a flag. Throw {@link RangeError} if out of bounds.
-	 * @param {number} x 
-	 * @param {number} y 
+	 * @param {number} x
+	 * @param {number} y
 	 * @returns {boolean}
 	 */
 	hasFlag(x, y) {
@@ -185,9 +185,9 @@ export class Board {
 
 	/**
 	 * Set the flag of the {@link Tile} at (x, y). Throw {@link RangeError} if out of bounds.
-	 * @param {number} x 
-	 * @param {number} y 
-	 * @param {boolean} f 
+	 * @param {number} x
+	 * @param {number} y
+	 * @param {boolean} f
 	 */
 	setFlag(x, y, f) {
 		if (x < 0 || x >= this.#w || y < 0 || y >= this.#h) {
@@ -199,10 +199,9 @@ export class Board {
 		this.#flag[x][y] = f;
 	}
 
-
 	/**
 	 * Convert the board to a plain object representation.
-	 * 
+	 *
 	 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
 	 * @returns {PlainBoard}
 	 */
@@ -215,5 +214,4 @@ export class Board {
 			flag: this.#flag,
 		};
 	}
-
 }
