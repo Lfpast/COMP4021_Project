@@ -460,6 +460,9 @@ function readUsers() {
  * @param {Record<string, User>} users
  */
 function writeUsers(users) {
+	if (!fs.existsSync("db")) {
+		fs.mkdirSync("db", { recursive: true });
+	}
 	fs.writeFileSync("db/users.json", JSON.stringify(users, null, 2), "utf-8");
 }
 
