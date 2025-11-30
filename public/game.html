@@ -109,6 +109,7 @@
 			align-items: center;
 			z-index: 20;
 			font-family: "Tomorrow Night", monospace;
+			cursor: none;
 		}
 
 		.cheat-panel {
@@ -131,6 +132,7 @@
 			display: flex;
 			gap: 20px;
 			margin-top: 20px;
+			justify-content: center;
 		}
 
 		.cheat-btn {
@@ -393,6 +395,9 @@
 			 * @type {PlainBoard}
 			 */
 			let board;
+			let gameMode = "custom";
+			let gameW = 0;
+			let gameH = 0;
 
 			const socket = io({
 				query: {
@@ -419,6 +424,43 @@
 					}
 					
 					if (!started) return;
+
+					// Difficulty Logic
+					const btnLives = $("#btn-lives");
+					const btnPeek = $("#btn-peek");
+					const btnReveal = $("#btn-reveal");
+
+					// Reset display
+					btnLives.hide();
+					btnPeek.hide();
+					btnReveal.hide();
+
+					const area = gameW * gameH;
+					const mediumArea = 16 * 16; // 256
+					const expertArea = 30 * 16; // 480
+
+					if (gameMode === "simple") {
+						btnLives.show();
+					} else if (gameMode === "medium") {
+						btnLives.show();
+						btnPeek.show();
+					} else if (gameMode === "expert") {
+						btnLives.show();
+						btnPeek.show();
+						btnReveal.show();
+					} else {
+						// Custom Logic
+						if (area <= mediumArea) {
+							btnLives.show();
+						} else if (area < expertArea) {
+							btnLives.show();
+							btnPeek.show();
+						} else {
+							btnLives.show();
+							btnPeek.show();
+							btnReveal.show();
+						}
+					}
 
 					if (cheatModal.css("display") === "none") {
 						cheatModal.css("display", "flex");
@@ -516,8 +558,11 @@
 				});
 			});
 
-			socket.on("init board", ({ w, h }) => {
-				console.log(`Initialize board with width: ${w}, height: ${h}`);
+			socket.on("init board", ({ w, h, mode }) => {
+				console.log(`Initialize board with width: ${w}, height: ${h}, mode: ${mode}`);
+				gameMode = mode || "custom";
+				gameW = w;
+				gameH = h;
 
 				// Dynamic Scaling
 				const gc = $("#game-container");
@@ -1034,16 +1079,18 @@
 					});
 				});
 
+				// Draw cursor once
+				ctxCursor.imageSmoothingEnabled = false;
+				ctxCursor.drawImage(UI, 1 * 16, 4 * 16, 16, 16, 0, 0, 32, 32);
+
+				$(document).on("mousemove", (event) => {
+					canvasCursor.css("left", `${event.clientX - 6}px`);
+					canvasCursor.css("top", `${event.clientY}px`);
+				});
+
 				let prevFocusX = NaN;
 				let prevFocusY = NaN;
 				canvasBackground.on("mousemove", (event) => {
-					ctxCursor.imageSmoothingEnabled = false;
-					ctxCursor.clearRect(0, 0, fgw, fgh);
-					ctxCursor.drawImage(UI, 1 * 16, 4 * 16, 16, 16, 0, 0, 32, 32);
-
-					canvasCursor.css("left", `${event.clientX - 6}px`);
-					canvasCursor.css("top", `${event.clientY}px`);
-
 					const x = Math.floor((event.offsetX - bdl) / PPT);
 					const y = Math.floor((event.offsetY - bdt) / PPT);
 
