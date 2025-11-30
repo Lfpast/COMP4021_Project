@@ -262,6 +262,7 @@ const Modes = ["simple", "medium", "expert"];
  * }>}
  */
 const lobbies = {};
+const lobbyTimeouts = new Map();
 
 const randomCode = () => {
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -285,12 +286,25 @@ io.of("/lobby").on("connection", (socket) => {
 		Object.entries(lobbies).forEach(([game, lobby]) => {
 			if (lobby.players.includes(player)) {
 				lobby.players = lobby.players.filter((p) => p !== player);
-				io.to(game).emit("user leave", player);
+				io.of("/lobby").to(game).emit("user leave", player);
+				
 				if (lobby.players.length === 0) {
-					delete lobbies[game];
-					console.log(
-						`[${socket.id}] Lobby ${game} disappears due to no players.`,
-					);
+					// Delay destruction to allow refresh/reconnect
+					io.of("/lobby").emit("update lobbies", { lobbies });
+					
+					const timeout = setTimeout(() => {
+						if (lobbies[game] && lobbies[game].players.length === 0) {
+							delete lobbies[game];
+							lobbyTimeouts.delete(game);
+							io.of("/lobby").emit("update lobbies", { lobbies });
+							console.log(
+								`[${socket.id}] Lobby ${game} disappears due to no players (timeout).`,
+							);
+						}
+					}, 5000); // 5 seconds grace period
+					lobbyTimeouts.set(game, timeout);
+				} else {
+					io.of("/lobby").emit("update lobbies", { lobbies });
 				}
 			}
 		});
@@ -324,8 +338,14 @@ io.of("/lobby").on("connection", (socket) => {
 			return;
 		}
 
+		// Cancel destruction timeout if exists
+		if (lobbyTimeouts.has(game)) {
+			clearTimeout(lobbyTimeouts.get(game));
+			lobbyTimeouts.delete(game);
+		}
+
 		if (!lobby.players.includes(player)) {
-			if (lobby.players.length >= 8) {
+			if (lobby.players.length >= 4) {
 				socket.emit("error", { message: "Lobby is full." });
 				return;
 			}

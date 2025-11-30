@@ -180,6 +180,9 @@ function initMainPage() {
 	connectSocket();
 
 	$("#logoutBtn").off("click").on("click", async () => {
+		// Clear session storage to prevent auto-rejoin
+		sessionStorage.removeItem("currentLobbyId");
+		
 		try {
 			await fetch("/logout", { method: "POST" });
 			location.reload();
@@ -380,7 +383,7 @@ function connectSocket() {
 				.html(`
                 <div class="info">
                     <span class="name">${room.name}</span>
-                    <span class="details">Players: ${room.players.length}/8 | ${room.w}x${room.h} | ${room.c} mines</span>
+                    <span class="details">Players: ${room.players.length}/4 | ${room.w}x${room.h} | ${room.c} mines</span>
                 </div>
                 <span class="status waiting">Join</span>
             `)
@@ -405,6 +408,11 @@ function connectSocket() {
 			list.children().each(function () {
 				if ($(this).text() === player) $(this).remove();
 			});
+			
+			// Re-evaluate host status
+			const firstPlayer = list.children().first().text();
+			const isHost = firstPlayer === currentUser.username;
+			$("#startGameBtn").toggle(isHost);
 		}
 	});
 
@@ -471,12 +479,31 @@ function connectSocket() {
 		if (select.length) {
 			socket.emit("get leaderboard", { mode: select.val() });
 		}
+
+		// Attempt to reconnect to previous lobby if exists
+		const savedLobby = sessionStorage.getItem("currentLobbyId");
+		if (savedLobby) {
+			console.log("Attempting to reconnect to lobby:", savedLobby);
+			socket.emit("join lobby", { game: savedLobby });
+		}
 	});
 
-	socket.on("error", ({ message }) => showToast(message));
+	socket.on("error", ({ message }) => {
+		showToast(message);
+		if (message === "Lobby not found." || message === "Lobby is full.") {
+			// If reconnection failed, clear the saved ID and reset UI
+			if (sessionStorage.getItem("currentLobbyId")) {
+				sessionStorage.removeItem("currentLobbyId");
+				$("#roomInfo").hide();
+				$("#hostControls").hide();
+				$("#lobbySelection").show();
+			}
+		}
+	});
 }
 
 function showLobbyUI(gameId, roomName, players) {
+	sessionStorage.setItem("currentLobbyId", gameId);
 	$("#roomInfo").show();
 	$("#lobbySelection").hide();
 	$("#currentRoomName").text(roomName);
@@ -492,6 +519,10 @@ function showLobbyUI(gameId, roomName, players) {
 	const hostControls = $("#hostControls");
 	if (hostControls.length) {
 		hostControls.css("display", "block");
+		
+		// Only host (first player) can start game
+		const isHost = players.length > 0 && players[0] === currentUser.username;
+		$("#startGameBtn").toggle(isHost);
 	}
 
 	// Bind start button
@@ -515,6 +546,7 @@ function showLobbyUI(gameId, roomName, players) {
 	const leaveBtn = $("#leaveLobbyBtn");
 	if (leaveBtn.length) {
 		leaveBtn.off("click").on("click", () => {
+			sessionStorage.removeItem("currentLobbyId");
 			socket.emit("leave lobby", { game: gameId });
 			$("#roomInfo").hide();
 			$("#hostControls").hide();

@@ -56,8 +56,15 @@ Real-time collaboration on a shared grid.
 
 ### 4. Cheat Mode
 Optional assistance features (Toggled via 'C' key).
-- **Auto-Flag**: Automatically marks mines.
-*Note: Cheat mode availability depends on server settings.*
+- **Extra Lives (❤️)**: Adds 3 lives. Hitting a mine consumes a life instead of ending the game.
+- **Magic Glasses (🔍)**: Peeks at a 3x3 area for 2 seconds without triggering mines.
+- **Reveal All (💣)**: Instantly flags all mines on the board.
+
+**Difficulty Restrictions**:
+- **Simple**: Only Extra Lives.
+- **Medium**: Extra Lives + Magic Glasses.
+- **Expert**: All cheats unlocked.
+- **Custom**: Cheats unlock based on board size (Small: Lives, Medium: Lives+Peek, Large: All).
 
 ## Project Structure
 
