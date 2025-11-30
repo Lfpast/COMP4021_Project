@@ -269,6 +269,7 @@ export class Game {
 	 * Flag all mines on the board. For cheating purposes only.
 	 */
 	cheat() {
+		if (this.#initial) return;
 		for (const [x, y] of board(this.w, this.h)) {
 			if (this.#board.get(x, y).t === TileMin) {
 				this.#board.setFlag(x, y, !this.#board.hasFlag(x, y));
