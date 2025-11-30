@@ -1,4 +1,9 @@
 /* 默认主题：Classic White */
+@font-face {
+	font-family: "Tomorrow Night";
+	src: url("assets/Tomorrow_Night.ttf") format("truetype");
+}
+
 :root {
 	--bg: #f5f7fa;
 	--card: #ffffff;
@@ -33,12 +38,19 @@
 body {
 	background: var(--bg);
 	color: var(--text);
-	font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+	font-family: "Tomorrow Night", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 	margin: 0;
 	padding: 0;
 	min-height: 100vh;
 	display: flex;
 	flex-direction: column;
+}
+
+button,
+input,
+select,
+textarea {
+	font-family: "Tomorrow Night", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .container {

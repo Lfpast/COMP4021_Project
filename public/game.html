@@ -178,7 +178,7 @@
 			AudioReveal.addEventListener("canplaythrough", r, { once: true });
 			AudioReveal.addEventListener("error", r, { once: true });
 		});
-		AudioReveal.src = "./assets/reveal.mp3";
+		AudioReveal.src = "./sounds/reveal.mp3";
 
 		const AudioMine = new Audio();
 		AudioMine.volume = volume;
@@ -186,7 +186,7 @@
 			AudioMine.addEventListener("canplaythrough", r, { once: true });
 			AudioMine.addEventListener("error", r, { once: true });
 		});
-		AudioMine.src = "./assets/mine.mp3";
+		AudioMine.src = "./sounds/mine.mp3";
 
 		const canvasContainer = $("#canvas-container");
 		const overlay = $("#overlay");
