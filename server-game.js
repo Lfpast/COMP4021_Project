@@ -185,20 +185,30 @@ io.on("connection", (socket) => {
 	 * The event that a player reveals a tile.
 	 */
 	socket.on("reveal", ({ x, y }) => {
+		if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 		console.log(
 			`[${socket.id}] User ${user} revealed tile at (${x}, ${y}) in room ${room}.`,
 		);
-		game.reveal(x, y);
+		try {
+			game.reveal(x, y);
+		} catch (e) {
+			console.error(`[${socket.id}] Error in reveal:`, e);
+		}
 	});
 
 	/**
 	 * The event that a player flags a tile.
 	 */
 	socket.on("flag", ({ x, y }) => {
+		if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 		console.log(
 			`[${socket.id}] User ${user} flagged tile at (${x}, ${y}) in room ${room}.`,
 		);
-		game.flag(x, y);
+		try {
+			game.flag(x, y);
+		} catch (e) {
+			console.error(`[${socket.id}] Error in flag:`, e);
+		}
 	});
 
 	/**
@@ -215,9 +225,9 @@ io.on("connection", (socket) => {
 	 * The mouse move event of a player.
 	 */
 	socket.on("move", ({ x, y }) => {
-		console.log(
-			`[${socket.id}] User ${user} moved mouse to (${x}, ${y}) in room ${room}.`,
-		);
+		// console.log(
+		// 	`[${socket.id}] User ${user} moved mouse to (${x}, ${y}) in room ${room}.`,
+		// );
 		io.to(room).emit("move", { ui: userIndex, x, y });
 	});
 
@@ -226,19 +236,28 @@ io.on("connection", (socket) => {
 	 */
 	socket.on("cheat", ({ type } = {}) => {
 		console.log(`[${socket.id}] User ${user} used cheat ${type || 'reveal'} in room ${room}.`);
-		if (!type || type === 'reveal') {
-			game.cheat();
-		} else if (type === 'lives') {
-			game.addLives(3);
-			io.to(room).emit("lives added", { count: 3, user });
+		try {
+			if (!type || type === 'reveal') {
+				game.cheat();
+			} else if (type === 'lives') {
+				game.addLives(3);
+				io.to(room).emit("lives added", { count: 3, user });
+			}
+		} catch (e) {
+			console.error(`[${socket.id}] Error in cheat:`, e);
 		}
 	});
 
 	socket.on("peek", ({ x, y }) => {
+		if (!Number.isInteger(x) || !Number.isInteger(y)) return;
 		console.log(`[${socket.id}] User ${user} peeked at (${x}, ${y}) in room ${room}.`);
-		const tiles = game.peek(x, y);
-		// Send only to the requester or everyone? Let's send to everyone for fun/coop
-		io.to(room).emit("peek result", { tiles, user });
+		try {
+			const tiles = game.peek(x, y);
+			// Send only to the requester or everyone? Let's send to everyone for fun/coop
+			io.to(room).emit("peek result", { tiles, user });
+		} catch (e) {
+			console.error(`[${socket.id}] Error in peek:`, e);
+		}
 	});
 
 	// Handle disconnection
