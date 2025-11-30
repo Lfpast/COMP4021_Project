@@ -96,6 +96,68 @@
 			font-size: 16px;
 		}
 
+		#cheat-modal {
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			background-color: rgba(0, 0, 0, 0.7);
+			display: none;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			z-index: 20;
+			font-family: "Tomorrow Night", monospace;
+		}
+
+		.cheat-panel {
+			background-color: #897a6c;
+			border: 4px solid #5d4037;
+			padding: 20px;
+			border-radius: 8px;
+			text-align: center;
+			color: white;
+			box-shadow: 0 0 20px rgba(0,0,0,0.5);
+		}
+
+		.cheat-panel h2 {
+			margin-top: 0;
+			color: #e67e22;
+			text-shadow: 2px 2px 0px #000;
+		}
+
+		.cheat-options {
+			display: flex;
+			gap: 20px;
+			margin-top: 20px;
+		}
+
+		.cheat-btn {
+			background: #d35400;
+			border: 2px solid #a04000;
+			color: white;
+			padding: 15px;
+			font-family: inherit;
+			font-size: 16px;
+			cursor: pointer;
+			transition: all 0.2s;
+			width: 120px;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.cheat-btn:hover {
+			background: #e67e22;
+			transform: scale(1.05);
+		}
+
+		.cheat-btn span {
+			font-size: 24px;
+		}
+
 		#cursor {
 			position: fixed;
 			left: -100vh;
@@ -103,6 +165,26 @@
 			pointer-events: none;
 
 			z-index: 100;
+		}
+
+		#notification {
+			position: fixed;
+			top: 10%;
+			left: 50%;
+			transform: translateX(-50%);
+			background-color: #897a6c;
+			border: 4px solid #5d4037;
+			padding: 15px 30px;
+			border-radius: 8px;
+			color: #e67e22;
+			font-family: "Tomorrow Night", monospace;
+			font-size: 20px;
+			z-index: 30;
+			box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+			text-shadow: 2px 2px 0px #000;
+			pointer-events: none;
+			display: none;
+			text-align: center;
 		}
 
 		@keyframes shake {
@@ -125,6 +207,7 @@
 		</style>
 	</head>
 	<body>
+		<div id="notification"></div>
 		<div id="game-container">
 			<div id="canvas-container" style="width: 640px; height: 768px;">
 				<canvas id="canvas-background" width="640" height="768"></canvas>
@@ -133,6 +216,27 @@
 				<div id="overlay">
 					<div id="overlay-text">Joining Game...</div>
 					<div id="overlay-description">Please Wait</div>
+				</div>
+				<div id="cheat-modal">
+					<div class="cheat-panel">
+						<h2>CHEAT MODE</h2>
+						<p>Select your advantage:</p>
+						<div class="cheat-options">
+							<button class="cheat-btn" id="btn-lives">
+								<span>❤️</span>
+								Extra Lives (3)
+							</button>
+							<button class="cheat-btn" id="btn-peek">
+								<span>🔍</span>
+								Magic Glasses
+							</button>
+							<button class="cheat-btn" id="btn-reveal">
+								<span>💣</span>
+								Reveal All
+							</button>
+						</div>
+						<p style="font-size: 12px; margin-top: 15px; color: #ddd;">(Press C again to close)</p>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -202,6 +306,9 @@
 
 		const canvasCursor = $("#cursor");
 		const ctxCursor = canvasCursor[0].getContext("2d");
+
+		const cheatModal = $("#cheat-modal");
+		let isPeeking = false;
 
 		const canvasesFocus = [];
 		const ctxsFocus = [];
@@ -279,6 +386,14 @@
 			pAudioReveal,
 			pAudioMine,
 		]).then(() => {
+			/**
+			 * Convert the board to a plain object representation.
+			 *
+			 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
+			 * @type {PlainBoard}
+			 */
+			let board;
+
 			const socket = io({
 				query: {
 					user,
@@ -292,7 +407,92 @@
 
 			$(document).on("keydown", (e) => {
 				if (e.key.toLowerCase() === "c") {
-					socket.emit("cheat");
+					// Check if game started (any visible tile)
+					let started = false;
+					if (board && board.visible) {
+						for(let r of board.visible) {
+							if(r.some(v => v)) {
+								started = true;
+								break;
+							}
+						}
+					}
+					
+					if (!started) return;
+
+					if (cheatModal.css("display") === "none") {
+						cheatModal.css("display", "flex");
+					} else {
+						cheatModal.hide();
+					}
+				}
+			});
+
+			$("#btn-lives").on("click", () => {
+				socket.emit("cheat", { type: "lives" });
+				cheatModal.hide();
+				
+				const notif = $("#notification");
+				notif.html("❤️ 3 Extra Lives Added!<br><span style='font-size:14px;color:#fff'>Next 3 mines you hit will be saved.</span>");
+				notif.fadeIn();
+				setTimeout(() => notif.fadeOut(), 3000);
+			});
+
+			$("#btn-peek").on("click", () => {
+				isPeeking = true;
+				cheatModal.hide();
+				canvasContainer.css("cursor", "help"); // Change cursor to indicate peek mode
+			});
+
+			$("#btn-reveal").on("click", () => {
+				socket.emit("cheat", { type: "reveal" });
+				cheatModal.hide();
+			});
+
+			socket.on("lives added", ({ count, user: u }) => {
+				console.log(`${u} added ${count} lives`);
+			});
+
+			socket.on("peek result", ({ tiles, user: u }) => {
+				// Draw peeked tiles temporarily
+				tiles.forEach(({ x, y, t }) => {
+					// We need to manually draw these tiles as if they were revealed
+					// Map tile object to draw type
+					let type;
+					if (t.t === "EMP") type = 0;
+					else if (t.t === "NUM") type = t.n;
+					else if (t.t === "MIN") type = "mine";
+					
+					// Draw on canvasPress (overlay layer) or main canvas?
+					// Let's draw on canvasPress so we can clear it easily
+					// Actually, we need to use the draw function logic but targeting a specific context
+					// For simplicity, let's just use the main draw logic but force it
+					
+					// Re-implement draw logic for peek
+					const drawPeek = (x, y, type) => {
+						ctxPress.imageSmoothingEnabled = false;
+						switch (type) {
+							case 0:
+								ctxPress.drawImage(Grids, 0, 0, 16, 16, x * PPT, y * PPT, PPT, PPT);
+								break;
+							case "mine":
+								ctxPress.drawImage(Cells, 32, 64, 16, 16, x * PPT, y * PPT, PPT, PPT);
+								break;
+							default: // Number
+								ctxPress.drawImage(Cells, (type - 1) * 16, 0, 16, 16, x * PPT, y * PPT, PPT, PPT);
+						}
+					};
+					drawPeek(x, y, type);
+				});
+
+				// Clear after 2 seconds
+				setTimeout(() => {
+					ctxPress.clearRect(0, 0, canvasPress[0].width, canvasPress[0].height);
+				}, 2000);
+				
+				if (isPeeking) {
+					isPeeking = false;
+					canvasContainer.css("cursor", "none");
 				}
 			});
 
@@ -363,14 +563,6 @@
 					c[0].width = fgw;
 					c[0].height = fgh;
 				}
-
-				/**
-				 * Convert the board to a plain object representation.
-				 *
-				 * @typedef {{w: number, h: number, tiles: Tile[][], visible: boolean[][], flag: boolean[][]}} PlainBoard
-				 * @type {PlainBoard}
-				 */
-				let board;
 
 				const type = (x, y) => {
 					if (board.visible[x][y]) {
@@ -907,7 +1099,11 @@
 						y >= 0 &&
 						y < board.h
 					) {
-						if (event.button === 0) {
+						if (isPeeking) {
+							socket.emit("peek", { x, y });
+							isPeeking = false;
+							canvasContainer.css("cursor", "none");
+						} else if (event.button === 0) {
 							socket.emit("reveal", { x, y });
 						} else {
 							socket.emit("flag", { x, y });

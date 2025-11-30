@@ -98,7 +98,8 @@ io.on("connection", (socket) => {
 		throw new Error("Unreachable");
 	}
 
-	socket.emit("init board", { w: game.w, h: game.h, c: game.mines });
+	const mode = roomModes.get(room) || "custom";
+	socket.emit("init board", { w: game.w, h: game.h, c: game.mines, mode });
 	socket.emit("update board", {
 		b: game.board().toPlain(),
 		cs: [...board(game.w, game.h)],
@@ -213,9 +214,21 @@ io.on("connection", (socket) => {
 	/**
 	 * The cheat event.
 	 */
-	socket.on("cheat", () => {
-		console.log(`[${socket.id}] User ${user} used cheat in room ${room}.`);
-		game.cheat();
+	socket.on("cheat", ({ type } = {}) => {
+		console.log(`[${socket.id}] User ${user} used cheat ${type || 'reveal'} in room ${room}.`);
+		if (!type || type === 'reveal') {
+			game.cheat();
+		} else if (type === 'lives') {
+			game.addLives(3);
+			io.to(room).emit("lives added", { count: 3, user });
+		}
+	});
+
+	socket.on("peek", ({ x, y }) => {
+		console.log(`[${socket.id}] User ${user} peeked at (${x}, ${y}) in room ${room}.`);
+		const tiles = game.peek(x, y);
+		// Send only to the requester or everyone? Let's send to everyone for fun/coop
+		io.to(room).emit("peek result", { tiles, user });
 	});
 
 	// Handle disconnection

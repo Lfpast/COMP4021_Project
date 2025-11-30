@@ -25,6 +25,8 @@ export class Game {
 	mines;
 
 	#initial = true;
+	#lives = 0;
+	#defused = new Set();
 
 	/**
 	 * Create a game board.
@@ -162,11 +164,27 @@ export class Game {
 		}
 
 		const t = this.apply(x, y);
+		
+		// Check for mine hit with lives
+		if (this.#board.get(x, y).t === TileMin && !this.#board.isVisible(x, y)) {
+			if (this.#lives > 0) {
+				this.#lives--;
+				this.#board.setVisible(x, y, true);
+				this.#defused.add(`${x},${y}`);
+				this.#accumulate([x, y]);
+				this.#notify();
+				return; // Saved by life
+			}
+		}
+
 		if (t !== TileHidden && t !== TileFlag && t.t === TileNum && t.n > 0) {
 			// Reveal surrounding tiles if number of flags equals the number
 			const mines = surrounding(x, y)
 				.filter(([xx, yy]) => xx >= 0 && xx < this.w && yy >= 0 && yy < this.h)
-				.filter(([xx, yy]) => this.apply(xx, yy) === TileFlag).length;
+				.filter(([xx, yy]) => {
+					const tile = this.apply(xx, yy);
+					return tile === TileFlag || (tile.t === TileMin);
+				}).length;
 			if (mines === t.n) {
 				for (const [xx, yy] of surrounding(x, y)) {
 					if (xx < 0 || xx >= this.w || yy < 0 || yy >= this.h) continue;
@@ -205,7 +223,9 @@ export class Game {
 			const { t } = this.#board.get(x, y);
 			const v = this.#board.isVisible(x, y);
 			if (v && t === TileMin) {
-				return "LOSS";
+				if (!this.#defused.has(`${x},${y}`)) {
+					return "LOSS";
+				}
 			}
 			if (!v && t !== TileMin) {
 				win = false;
@@ -279,4 +299,25 @@ export class Game {
 		this.#notify();
 	}
 
+	addLives(n) {
+		this.#lives += n;
+	}
+
+	/**
+	 * Peek at a 3x3 area around (x, y).
+	 * @param {number} x
+	 * @param {number} y
+	 * @returns {{x: number, y: number, t: Tile}[]}
+	 */
+	peek(x, y) {
+		const result = [];
+		// Include center and surrounding
+		const targets = [...surrounding(x, y), [x, y]];
+		for (const [xx, yy] of targets) {
+			if (xx >= 0 && xx < this.w && yy >= 0 && yy < this.h) {
+				result.push({ x: xx, y: yy, t: this.#board.get(xx, yy) });
+			}
+		}
+		return result;
+	}
 }
