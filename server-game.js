@@ -408,8 +408,8 @@ io.of("/lobby").on("connection", (socket) => {
  * @returns {Record<string, User>}
  */
 function readUsers() {
-	if (!fs.existsSync("users.json")) writeUsers({});
-	const data = fs.readFileSync("users.json", "utf-8");
+	if (!fs.existsSync("db/users.json")) writeUsers({});
+	const data = fs.readFileSync("db/users.json", "utf-8");
 	return JSON.parse(data);
 }
 
@@ -417,7 +417,7 @@ function readUsers() {
  * @param {Record<string, User>} users
  */
 function writeUsers(users) {
-	fs.writeFileSync("users.json", JSON.stringify(users, null, 2), "utf-8");
+	fs.writeFileSync("db/users.json", JSON.stringify(users, null, 2), "utf-8");
 }
 
 app.post("/register", async (req, res) => {
@@ -479,10 +479,16 @@ app.post("/verify", (req, res) => {
 	// @ts-expect-error
 	const { user } = req.session;
 	if (user) {
-		return res.json({ success: true, user });
-	} else {
-		return res.json({ success: false });
+		const users = readUsers();
+		const freshUser = users[user.username];
+		if (freshUser) {
+			const updatedUser = { ...freshUser, username: user.username };
+			// @ts-expect-error
+			req.session.user = updatedUser;
+			return res.json({ success: true, user: updatedUser });
+		}
 	}
+	return res.json({ success: false });
 });
 
 // ==============

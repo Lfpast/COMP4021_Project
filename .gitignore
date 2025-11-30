@@ -29,7 +29,5 @@ Thumbs.db
 *.swp
 *.swo
 
-
-db/
-db.json
+db/users.json
 
