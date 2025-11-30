@@ -112,11 +112,7 @@ io.on("connection", (socket) => {
 	const update = () => {
 		const epoch = gameEpoch.get(room);
 		const time = epoch ? Math.floor((Date.now() - epoch) / 1000) : 0;
-		const mine =
-			game.mines -
-			[...board(game.w, game.h)]
-				.map(([x, y]) => game.apply(x, y))
-				.filter((t) => t === TileFlag).length;
+		const mine = game.mines - game.flags;
 		io.to(room).emit("update status", {
 			gameStatus: game.isGameOver(),
 			timeDisplay: time,
@@ -127,7 +123,9 @@ io.on("connection", (socket) => {
 
 	const unsubscribe = game.subscribe((b, cs) => {
 		console.log(`[${socket.id}] Board update in room ${room}`);
-		io.to(room).emit("update board", { b: b.toPlain(), cs });
+		// Use socket.emit instead of io.to(room).emit to prevent N^2 broadcast storm
+		// Each connected user has their own subscription, so they will receive their own update
+		socket.emit("update board", { b: b.toPlain(), cs });
 		update();
 		if (!gameEpoch.has(room)) {
 			gameEpoch.set(room, Date.now());

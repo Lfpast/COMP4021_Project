@@ -281,6 +281,10 @@ export class Game {
 		return this.#board;
 	}
 
+	get flags() {
+		return this.#board.flagCount;
+	}
+
 	isInitial() {
 		return this.#initial;
 	}

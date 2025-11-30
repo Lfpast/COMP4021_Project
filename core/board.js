@@ -46,6 +46,8 @@ export class Board {
 	#visible;
 	/** @type {boolean[][]} */
 	#flag;
+	/** @type {number} */
+	#flagCount = 0;
 
 	#w;
 	#h;
@@ -196,7 +198,15 @@ export class Board {
 			);
 		}
 		// @ts-expect-error impossible out-of-bounds
-		this.#flag[x][y] = f;
+		if (this.#flag[x][y] !== f) {
+			// @ts-expect-error impossible out-of-bounds
+			this.#flag[x][y] = f;
+			this.#flagCount += f ? 1 : -1;
+		}
+	}
+
+	get flagCount() {
+		return this.#flagCount;
 	}
 
 	/**
